@@ -1,5 +1,6 @@
 from airlift.evaluators.utils import doeval, doeval_single_episode
 from solution.mysolution import MySolution
+#from airlift.solutions.baselines import ShortestPath
 import os
 import time
 import click

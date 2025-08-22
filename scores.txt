@@ -1,0 +1,6 @@
+MEAN_Score: 0.000
+SUM_Score: 0.000
+MEAN_Normalized_Score: 0.000
+MEAN_Percent_Missed: 0.000
+set1_score: 0.000
+Duration: 0.000

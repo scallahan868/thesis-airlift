@@ -1,0 +1,6 @@
+MEAN_Score: 2.950
+SUM_Score: 11.798
+MEAN_Normalized_Score: 0.310
+MEAN_Percent_Missed: 0.000
+set1_score: 1.241
+Duration: 0.000
