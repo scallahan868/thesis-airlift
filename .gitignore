@@ -1,0 +1,37 @@
+# RLlib logs, checkpoints, and outputs
+airlift/rllib_logs/
+wandb/
+runs/
+logs/
+results/
+checkpoints/
+
+# Ray Tune / experiment logs
+*/ray_results/
+ray_results/
+
+# Large ML artifacts
+*.pth
+*.pt
+*.pkl
+*.zip
+*.tar
+*.tar.gz
+*.npy
+*.h5
+*.wandb
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Jupyter cache
+.ipynb_checkpoints/
+
+# VSCode and IDE settings
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,10 @@
+absl-py>=0.4
+grpcio>=1.48.2
+markdown>=2.6.8
+numpy>=1.12.0
+packaging
+pillow
+protobuf!=4.24.0,>=3.19.6
+setuptools>=41.0.0
+tensorboard-data-server<0.8.0,>=0.7.0
+werkzeug>=1.0.1

@@ -1,0 +1,2 @@
+[console_scripts]
+airlift-demo = airlift.cli:demo
