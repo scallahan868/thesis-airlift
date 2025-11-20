@@ -3,6 +3,8 @@ from ray.rllib.callbacks.callbacks import RLlibCallback
 import json
 import os
 
+import requests
+
 
 class AlgorithmTrainingCallback(RLlibCallback):
     """Enhanced callback with curriculum progression and detailed logging."""
@@ -55,25 +57,42 @@ class AlgorithmTrainingCallback(RLlibCallback):
         # if self.iteration_count > 0 and (self.iteration_count + 1) % (read_data["max_iterations"] // 15) == 0:
         #     read_data["test_id"] = read_data["test_id"] + 1
 
-        iterations_per_level = read_data["max_iterations"] // 15
-        read_data["test_id"] = min(self.iteration_count // iterations_per_level, 14)
+        # iterations_per_level = read_data["max_iterations"] // 15
+        # read_data["test_id"] = min(self.iteration_count // iterations_per_level, 14)
 
-        # base_test_id = read_data["test_id"]
+        base_test_id = read_data["test_id"]
+        reset_iter = read_data["reset_iter"]
 
-        # env_runners = result.get("env_runners", {})
-        # custom = env_runners.get("custom_metrics", {})
+        env_runners = result.get("env_runners", {})
+        custom = env_runners.get("custom_metrics", {})
 
-        # prop_val = custom.get("proportion_deliveries_missed_mean", None)
+        prop_val = custom.get("proportion_deliveries_missed_mean", None)
 
-        # if prop_val is not None and prop_val < 0.3:
-        #     read_data["test_id"] = min(base_test_id + 1, 14)
-        # else:
-        #     read_data["test_id"] = base_test_id
+        if prop_val is not None and prop_val < 0.3 and reset_iter > 20:
+            read_data["test_id"] = min(base_test_id + 1, 14)
+            reset_iter = 0
+            data = {
+                "token": "aem37vgi2ahyjj13uas1rant8tm4e4",
+                "user": "u9w3eapuf49w2oijy3y7hiimab3d1f",
+                "title": "Airlift Challenge Notification",
+                "message": f"Airlift Challenge Training Has Progressed to Test ID {read_data['test_id']}",
+            }
+            response = requests.post("https://api.pushover.net/1/messages.json", data=data)
+            try:
+                response.raise_for_status()
+                print("Notification sent! Response:", response.json())
+            except requests.exceptions.HTTPError as e:
+                print("Error sending notification:", e)
+                print("Response content:", response.text)
+        else:
+            read_data["test_id"] = base_test_id
+            reset_iter += 1
 
         data_to_write = {
             "current_iteration": self.iteration_count,
             "max_iterations": read_data["max_iterations"],
-            "test_id": read_data["test_id"]
+            "test_id": read_data["test_id"],
+            "reset_iter": reset_iter
             }
         with open(CURRICULUM_JSON_PATH, 'w') as f:
                 json.dump(data_to_write, f, indent=4)
