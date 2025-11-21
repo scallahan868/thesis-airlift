@@ -69,7 +69,7 @@ class AlgorithmTrainingCallback(RLlibCallback):
         prop_val = custom.get("proportion_deliveries_missed_mean", None)
 
         if prop_val is not None and prop_val < 0.3 and reset_iter > 20:
-            read_data["test_id"] = min(base_test_id + 1, 14)
+            read_data["test_id"] = base_test_id + 1
             reset_iter = 0
             data = {
                 "token": "aem37vgi2ahyjj13uas1rant8tm4e4",
