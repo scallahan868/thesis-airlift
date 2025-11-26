@@ -609,6 +609,18 @@ class AirliftSimpleFlattenWrapper:
             flattened_obs[aid]["globalstate"] = globalstate
             flattened_obs[aid]["action_mask"] = self._create_action_mask(obs[aid]).astype(np.float32)
 
+        for aid, adict in flattened_obs.items():
+            for k, v in adict.items():
+                arr = np.asarray(v)
+                if not np.all(np.isfinite(arr)):
+                    with open("bad_obs_log.txt", "a") as f:
+                        f.write(f"\n=== Non-finite observed in flatten_obs ===\n")
+                        f.write(f"Agent ID: {aid}\n")
+                        f.write(f"Key: {k}\n")
+                        f.write(f"Min: {np.nanmin(arr)}, Max: {np.nanmax(arr)}\n")
+                        f.write(f"Array contents:\n{arr}\n")
+                        f.write(f"{'='*50}\n")
+
         return flattened_obs
 
     def _flatten_action_list(self, name: str, values, maxlen: int = None) -> np.ndarray:

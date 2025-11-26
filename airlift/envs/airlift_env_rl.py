@@ -25,6 +25,9 @@ import gym
 import airlift.envs.spaces as airliftspaces
 from airlift.envs.route_map import RouteMap
 
+import numpy as np
+from datetime import datetime
+
 # This should be included in PettingZoo in a future release.
 # See https://github.com/Farama-Foundation/PettingZoo/blob/master/pettingzoo/utils/env.py
 from airlift.envs.generators.world_generators import WorldGenerator
@@ -393,6 +396,20 @@ class AirliftEnv(ParallelEnv):
 
             for agent in agents:
                 rewards[agent] += EPISODE_REWARD_DELIVERY_SCALE * frac_delivered
+
+        for aid, r in rewards.items():
+            if not np.isfinite(r):  # catches NaN, +inf, -inf
+                with open("bad_reward_log.txt", "a") as f:
+                    f.write("\n=== Non-finite reward detected ===\n")
+                    f.write(f"Time: {datetime.now()}\n")
+                    f.write(f"Agent ID: {aid}\n")
+                    f.write(f"Reward: {r}\n")
+                    # If you track episode number / test_id, include these:
+                    if hasattr(self, "curriculum_map"):
+                        f.write(f"test_id: {getattr(self.curriculum_map, 'current_testid', 'Unknown')}\n")
+                    if hasattr(self, 'episode_count'):
+                        f.write(f"episode: {self.episode_count}\n")
+                    f.write(f"{'='*40}\n")
 
         return rewards
 
