@@ -176,12 +176,13 @@ if __name__ == "__main__":
         env_to_module_connector=None,
         )
         .training(
-            lr=5e-5,
-            gamma=0.995,
-            lambda_=0.95,
-            clip_param=0.2,
-            vf_loss_coeff=0.3,
-            entropy_coeff=0.01,
+            lr=3e-5,
+            # gamma=0.995,
+            # lambda_=0.95,
+            # clip_param=0.2,
+            # vf_loss_coeff=0.3,
+            # kl_coeff=0.0,
+            # entropy_coeff=0.01,
             model={
             "custom_model": "centralized_critic_model",
             "custom_model_config": {

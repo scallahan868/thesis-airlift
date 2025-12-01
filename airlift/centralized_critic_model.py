@@ -19,6 +19,7 @@ for the critic, while actors still use their local observations.
 
 import numpy as np
 import torch
+from torch import Tensor
 import torch.nn as nn
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.models.torch.fcnet import FullyConnectedNetwork
@@ -156,6 +157,22 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
             mask = torch.as_tensor(obs["action_mask"], dtype=torch.float32)
             if mask.ndim == 1:
                 mask = mask.unsqueeze(0)  # [B, N]
+            
+            # === New validation and correction ========================
+            # Check whether mask contains only 0 or 1 (after conversion to float)
+            # Allow small numerical tolerance (e.g., 1e-6).
+            valid = (mask <= 1.0 + 1e-6) & (mask >= 0.0 - 1e-6)
+            if not torch.all(valid):
+                # Optional logging — only print once per run to avoid spam.
+                if not hasattr(self, "_logged_bad_mask"):
+                    print("\n[WARN] Invalid values found in action_mask! "
+                        "Values will be clamped to {0.0, 1.0}.")
+                    self._logged_bad_mask = True
+
+                # Fix mask (round to closest of {0,1}):
+                mask = torch.round(mask).clamp(0.0, 1.0)
+            # ===========================================================
+
             FLOAT_MIN = torch.finfo(logits.dtype).min
             logits = logits + torch.log(mask + 1e-12).clamp(min=FLOAT_MIN)
 
@@ -390,7 +407,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
                 }
             })
 
-def _to_2d_tensor(x) -> torch.Tensor:
+def _to_2d_tensor(x) -> Tensor:
     # Convert dict/list/np/tensor to a [B, F] float32 tensor.
     if isinstance(x, (dict, collections.OrderedDict)):
         parts = []

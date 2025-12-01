@@ -609,17 +609,30 @@ class AirliftSimpleFlattenWrapper:
             flattened_obs[aid]["globalstate"] = globalstate
             flattened_obs[aid]["action_mask"] = self._create_action_mask(obs[aid]).astype(np.float32)
 
-        for aid, adict in flattened_obs.items():
-            for k, v in adict.items():
-                arr = np.asarray(v)
+        for aid in flattened_obs:
+            for k, v in flattened_obs[aid].items():
+                arr = np.asarray(v, dtype=np.float32)
+
                 if not np.all(np.isfinite(arr)):
+                    # Log the bad array
                     with open("bad_obs_log.txt", "a") as f:
-                        f.write(f"\n=== Non-finite observed in flatten_obs ===\n")
+                        f.write("\n=== Non-finite observed in flatten_obs ===\n")
                         f.write(f"Agent ID: {aid}\n")
                         f.write(f"Key: {k}\n")
                         f.write(f"Min: {np.nanmin(arr)}, Max: {np.nanmax(arr)}\n")
                         f.write(f"Array contents:\n{arr}\n")
                         f.write(f"{'='*50}\n")
+
+                    # **Fix** it before returning to RLlib
+                    arr = np.nan_to_num(
+                        arr,
+                        nan=-1.0,   # our padding/sentinel value
+                        posinf=-1.0,
+                        neginf=-1.0,
+                    )
+
+                # Ensure everything is float32 and store back
+                flattened_obs[aid][k] = arr.astype(np.float32, copy=False)
 
         return flattened_obs
 

@@ -263,56 +263,57 @@ class AirliftEnv(ParallelEnv):
             # (1) Movement penalty (cache per-step unit cost on the plane)
             is_moving = (state == PlaneState_MOVING) or getattr(a, "is_in_flight", False)
             if is_moving:
-                try:
-                    cost_per_step = a._cached_cost_per_step
-                except AttributeError:
-                    cost = flight_cost(a.previous_airport, a.destination_airport, ptype)
-                    t    = flight_time(a.previous_airport, a.destination_airport, ptype)
-                    if t in (0, float("inf")):
-                        cps = 0.0
-                    else:
-                        cps = float(cost) / float(t)
-                    a._cached_cost_per_step = cps
-                    cost_per_step = cps
+                rewards[agent] -= REWARD_MOVEMENT_PENALTY
+                # try:
+                #     cost_per_step = a._cached_cost_per_step
+                # except AttributeError:
+                #     cost = flight_cost(a.previous_airport, a.destination_airport, ptype)
+                #     t    = flight_time(a.previous_airport, a.destination_airport, ptype)
+                #     if t in (0, float("inf")):
+                #         cps = 0.0
+                #     else:
+                #         cps = float(cost) / float(t)
+                #     a._cached_cost_per_step = cps
+                #     cost_per_step = cps
 
-                # apply if both knobs are non-zero
-                if getattr(self, "REWARD_MOVEMENT_PENALTY", 0.0) != 0.0 and cost_per_step > 1e-12:
-                    rewards[agent] -= REWARD_MOVEMENT_PENALTY * cost_per_step
+                # # apply if both knobs are non-zero
+                # if getattr(self, "REWARD_MOVEMENT_PENALTY", 0.0) != 0.0 and cost_per_step > 1e-12:
+                #     rewards[agent] -= REWARD_MOVEMENT_PENALTY * cost_per_step
 
            # (2) Cargo pickup reward: reward based on newly observed cargo ids
-            on_ground = (state != PlaneState_MOVING) and (a.destination_airport == NOAIRPORT)
-            if on_ground:
-                current_ids = {c.id for c in a.cargo}
-                prev_ids = getattr(a, "_prev_cargo", None)
-                if prev_ids is not None:
-                    new_pickups = current_ids - prev_ids
-                    if new_pickups and getattr(self, "REWARD_CARGO_PICKUP", 0.0) != 0.0:
-                        rewards[agent] += REWARD_CARGO_PICKUP * len(new_pickups)
-                a._prev_cargo = current_ids
+            # on_ground = (state != PlaneState_MOVING) and (a.destination_airport == NOAIRPORT)
+            # if on_ground:
+            #     current_ids = {c.id for c in a.cargo}
+            #     prev_ids = getattr(a, "_prev_cargo", None)
+            #     if prev_ids is not None:
+            #         new_pickups = current_ids - prev_ids
+            #         if new_pickups and getattr(self, "REWARD_CARGO_PICKUP", 0.0) != 0.0:
+            #             rewards[agent] += REWARD_CARGO_PICKUP * len(new_pickups)
+            #     a._prev_cargo = current_ids
 
             # (3) Proximity bonus: decreasing ETA to final destination
-            if is_moving and a.cargo:
-                dest_ap = a.destination_airport
-                if dest_ap != NOAIRPORT:
-                    # Remaining time to final drop = remaining on leg + shortest path from next airport to end
-                    leg_left = getattr(a, "time_remaining_on_leg", None)
-                    for cg in a.cargo:
-                        end_ap = cg.end_airport
-                        if end_ap is None:
-                            continue
+            # if is_moving and a.cargo:
+            #     dest_ap = a.destination_airport
+            #     if dest_ap != NOAIRPORT:
+            #         # Remaining time to final drop = remaining on leg + shortest path from next airport to end
+            #         leg_left = getattr(a, "time_remaining_on_leg", None)
+            #         for cg in a.cargo:
+            #             end_ap = cg.end_airport
+            #             if end_ap is None:
+            #                 continue
 
-                        downstream = flight_time(dest_ap, end_ap, ptype)
-                        if downstream == float("inf"):
-                            continue
-                        if leg_left is None:
-                            # fallback: assume one tick of progress on the leg; still gives a monotone signal
-                            leg_left = max(flight_time(a.previous_airport, dest_ap, ptype) - 1.0, 0.0)
+            #             downstream = flight_time(dest_ap, end_ap, ptype)
+            #             if downstream == float("inf"):
+            #                 continue
+            #             if leg_left is None:
+            #                 # fallback: assume one tick of progress on the leg; still gives a monotone signal
+            #                 leg_left = max(flight_time(a.previous_airport, dest_ap, ptype) - 1.0, 0.0)
 
-                        eta_now = leg_left + downstream
-                        eta_prev = getattr(cg, "_prev_eta_to_dest", None)
-                        if (eta_prev is not None) and (eta_now < eta_prev) and getattr(self, "REWARD_PROXIMITY_BONUS", 0.0) != 0.0:
-                            rewards[agent] += REWARD_PROXIMITY_BONUS * (eta_prev - eta_now)
-                        cg._prev_eta_to_dest = eta_now
+            #             eta_now = leg_left + downstream
+            #             eta_prev = getattr(cg, "_prev_eta_to_dest", None)
+            #             if (eta_prev is not None) and (eta_now < eta_prev) and getattr(self, "REWARD_PROXIMITY_BONUS", 0.0) != 0.0:
+            #                 rewards[agent] += REWARD_PROXIMITY_BONUS * (eta_prev - eta_now)
+            #             cg._prev_eta_to_dest = eta_now
 
         # --------------------- pass 2: deliveries & global penalties --------------
         # (4) Individual cargo delivery rewards (not shared)
@@ -396,20 +397,6 @@ class AirliftEnv(ParallelEnv):
 
             for agent in agents:
                 rewards[agent] += EPISODE_REWARD_DELIVERY_SCALE * frac_delivered
-
-        for aid, r in rewards.items():
-            if not np.isfinite(r):  # catches NaN, +inf, -inf
-                with open("bad_reward_log.txt", "a") as f:
-                    f.write("\n=== Non-finite reward detected ===\n")
-                    f.write(f"Time: {datetime.now()}\n")
-                    f.write(f"Agent ID: {aid}\n")
-                    f.write(f"Reward: {r}\n")
-                    # If you track episode number / test_id, include these:
-                    if hasattr(self, "curriculum_map"):
-                        f.write(f"test_id: {getattr(self.curriculum_map, 'current_testid', 'Unknown')}\n")
-                    if hasattr(self, 'episode_count'):
-                        f.write(f"episode: {self.episode_count}\n")
-                    f.write(f"{'='*40}\n")
 
         return rewards
 
