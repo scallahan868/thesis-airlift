@@ -173,6 +173,27 @@ class AirliftSimpleFlattenWrapper:
         self.num_possible_agents = int(24)
         self._last_central_state = None 
 
+        # Total number of logits / action entries
+        self.mask_dim = (
+            2 * self.max_cargo_per_airport
+            + 2 * self.max_cargo_per_plane
+            + self.max_routes_per_airport
+            + 1
+        )
+
+        self.prev_action_per_plane_dim = (
+            self.max_cargo_per_airport
+            + self.max_cargo_per_plane
+            + self.max_routes_per_airport
+            + 1
+        )
+
+        # Total size of previous_action vector: one mask_dim per plane slot
+        self.prev_action_dim = int(self.num_possible_agents) * int(self.prev_action_per_plane_dim)
+
+        # Buffer for previous actions (concatenated over all planes)
+        self._last_actions_for_all_agents = None
+
         # --- NEW: caches so we return the SAME space objects each call ---
         self._action_space_cache = {}         # agent_id -> gymnasium.Space
         self._observation_space_cache = {}    # agent_id -> gymnasium.Space
@@ -191,56 +212,6 @@ class AirliftSimpleFlattenWrapper:
         # If the underlying env itself is a wrapper, defer to its .unwrapped;
         # otherwise just return the base env.
         return getattr(self.env, "unwrapped", self.env)
-
-    # def reset(self, *, seed=None, options=None):
-    #     """
-    #     Gymnasium-style reset for Parallel (PettingZoo) envs.
-
-    #     Always returns:
-    #         (obs_dict, infos_dict)
-
-    #     - Accepts underlying envs that return either just `obs` (older PZ)
-    #     or `(obs, info)` (Gymnasium-style).
-    #     - Transforms observations to our flattened, numeric format.
-    #     - Builds a per-agent `infos` dict (empty dicts if base env doesn't provide one).
-    #     """
-    #     # First, try Gymnasium signature (seed + options)
-    #     try:
-    #         result = self.env.reset(seed=seed, options=options)
-    #     except TypeError:
-    #         # Underlying env doesn't accept `options`
-    #         result = self.env.reset(seed=seed)
-
-    #     # Normalize underlying return into (base_obs, base_info)
-    #     base_obs, base_info = None, {}
-        
-    #     if isinstance(result, tuple):
-    #         if len(result) == 2:
-    #             base_obs, base_info = result
-    #         else:
-    #             # Some envs may misbehave; take first item as obs and ignore the rest
-    #             base_obs = result[0]
-    #     else:
-    #         base_obs = result
-
-    #     # Transform per-agent observations to flat numeric arrays
-    #     # obs = self._transform_all(base_obs)
-    #     obs = self.flatten_obs(base_obs)
-
-    #     self._last_raw_obs = base_obs
-
-    #     # Build a per-agent infos dict
-    #     if isinstance(base_info, dict) and all(isinstance(k, str) for k in base_info.keys()):
-    #         # If base_info already looks like {agent_id: {...}}, keep it.
-    #         if all(isinstance(v, dict) for v in base_info.values()):
-    #             infos = {aid: dict(base_info.get(aid, {})) for aid in obs.keys()}
-    #         else:
-    #             # It's a single flat dict; expand to per-agent empties.
-    #             infos = {aid: {} for aid in obs.keys()}
-    #     else:
-    #         infos = {aid: {} for aid in obs.keys()}
-
-    #     return obs, infos
 
     def reset(self, *, seed=None, options=None):
         cm = getattr(self, "curriculum_map", None) or getattr(self.env, "curriculum_map", None)
@@ -310,6 +281,9 @@ class AirliftSimpleFlattenWrapper:
                 if getattr(self, "_debug_curriculum", False):
                     print(f"[Curriculum] refresh/swap failed: {e}")
 
+        # Clear previous action history at episode start
+        self._last_actions_for_all_agents = None
+
         # Delegate to underlying env reset (handle legacy API w/o options)
         try:
             result = self.env.reset(seed=seed, options=options)
@@ -332,6 +306,16 @@ class AirliftSimpleFlattenWrapper:
         Normalize to Gymnasium's 5-tuple:
         (obs, rewards, terminations, truncations, infos)
         """
+
+        # --- NEW: encode flat actions for previous_action feature ---
+        try:
+            self._update_previous_actions_vector(action_dict)
+        except Exception as e:
+            # Fail-safe: if encoding breaks, just clear history so we don't
+            # crash training. You can add logging here if you want.
+            self._last_actions_for_all_agents = None
+
+
         # Decode flat actions into actual cargo IDs (map slot indices -> cargo ids)
         decoded_action_dict = {
             aid: self._decode_action_from_flat(aid, action)
@@ -439,6 +423,16 @@ class AirliftSimpleFlattenWrapper:
 
             # --- centralized critic input (shared vector you attach to each agent) ---
             "globalstate":              Box(-np.inf, np.inf, shape=((3 + self.max_routes_per_airport + 2*self.max_cargo_per_plane + 2*self.max_cargo_per_airport + self.max_cargo_per_plane)*24,), dtype=np.float32),
+
+            # --- NEW: previous actions for all planes ---
+            # Values will be in {-1, 0, 1}: -1 for padding / "no action yet",
+            # 0/1 for one-hot action choices.
+            "previous_action": Box(
+                low=-1.0,
+                high=1.0,
+                shape=(self.prev_action_dim,),
+                dtype=np.float32,
+            ),
 
             # -- action mask --
             "action_mask": Box(low=0.0, high=1.0, shape=(mask_dim,), dtype=np.float32),
@@ -605,8 +599,18 @@ class AirliftSimpleFlattenWrapper:
 
         globalstate = np.concatenate(parts, dtype=np.float32)
 
+        # --- NEW: build previous_action vector ---
+        if self._last_actions_for_all_agents is None:
+            prev_action_vec = -1.0 * np.ones((self.prev_action_dim,), dtype=np.float32)
+        else:
+            prev_action_vec = np.asarray(self._last_actions_for_all_agents, dtype=np.float32)
+            # Safety: ensure correct length; if not, reset to -1
+            if prev_action_vec.size != self.prev_action_dim:
+                prev_action_vec = -1.0 * np.ones((self.prev_action_dim,), dtype=np.float32)
+
         for aid in flattened_obs:
             flattened_obs[aid]["globalstate"] = globalstate
+            flattened_obs[aid]["previous_action"] = prev_action_vec
             flattened_obs[aid]["action_mask"] = self._create_action_mask(obs[aid]).astype(np.float32)
 
         for aid in flattened_obs:
@@ -829,6 +833,106 @@ class AirliftSimpleFlattenWrapper:
         mask = np.concatenate([load_mask_pairs, unload_mask_pairs, dest_mask], axis=0).astype(np.float32)
         return mask
 
+    def _encode_single_action_for_history(self, flat_action) -> np.ndarray:
+        """
+        Encode one agent's action into a 1D vector of length mask_dim, matching the
+        logits/mask layout:
+
+        [ load(2 * max_cargo_per_airport),
+          unload(2 * max_cargo_per_plane),
+          destination(max_routes_per_airport + 1) ]
+
+        For load/unload, we one-hot each binary decision (0 -> [1,0], 1 -> [0,1]).
+        For destination, we one-hot over (max_routes_per_airport + 1) choices.
+
+        Returned values are in {0, 1}.
+        """
+        import numpy as np
+
+        k_load   = int(self.max_cargo_per_airport)
+        k_unload = int(self.max_cargo_per_plane)
+        dest_len = int(self.max_routes_per_airport) + 1
+
+        # --- load head ---
+        load_raw = flat_action.get("cargo_to_load", None)
+        if load_raw is None:
+            load_raw = np.zeros((k_load,), dtype=np.int64)
+        load_raw = np.asarray(load_raw, dtype=np.int64).ravel()
+        if load_raw.size < k_load:
+            pad = np.zeros((k_load - load_raw.size,), dtype=np.int64)
+            load_raw = np.concatenate([load_raw, pad], axis=0)
+        else:
+            load_raw = load_raw[:k_load]
+
+        load_pairs = np.zeros((k_load, 2), dtype=np.float32)
+        for i, val in enumerate(load_raw):
+            val = int(val)
+            if val == 0:
+                load_pairs[i, 0] = 1.0
+            else:
+                load_pairs[i, 1] = 1.0
+        load_vec = load_pairs.reshape(-1)  # length 2*k_load
+
+        # --- unload head ---
+        unload_raw = flat_action.get("cargo_to_unload", None)
+        if unload_raw is None:
+            unload_raw = np.zeros((k_unload,), dtype=np.int64)
+        unload_raw = np.asarray(unload_raw, dtype=np.int64).ravel()
+        if unload_raw.size < k_unload:
+            pad = np.zeros((k_unload - unload_raw.size,), dtype=np.int64)
+            unload_raw = np.concatenate([unload_raw, pad], axis=0)
+        else:
+            unload_raw = unload_raw[:k_unload]
+
+        unload_pairs = np.zeros((k_unload, 2), dtype=np.float32)
+        for i, val in enumerate(unload_raw):
+            val = int(val)
+            if val == 0:
+                unload_pairs[i, 0] = 1.0
+            else:
+                unload_pairs[i, 1] = 1.0
+        unload_vec = unload_pairs.reshape(-1)  # length 2*k_unload
+
+        # --- destination head ---
+        try:
+            dest_choice = int(flat_action.get("destination", 0))
+        except Exception:
+            dest_choice = 0
+        if dest_choice < 0 or dest_choice >= dest_len:
+            dest_choice = 0
+        dest_vec = np.zeros((dest_len,), dtype=np.float32)
+        dest_vec[dest_choice] = 1.0
+
+        # Concatenate into [load, unload, dest]
+        return np.concatenate([load_vec, unload_vec, dest_vec], axis=0).astype(np.float32)
+
+    def _update_previous_actions_vector(self, action_dict: Dict[str, Any]) -> None:
+        """
+        Build the big previous_action vector by concatenating encoded actions
+        for all plane slots (up to num_possible_agents). Missing agents / slots
+        are filled with -1.0.
+        """
+        import numpy as np
+
+        max_planes = getattr(self, "num_possible_agents", len(action_dict))
+        ordered_agents = list(getattr(self.env, "possible_agents", [])) or list(action_dict.keys())
+
+        if len(ordered_agents) > max_planes:
+            ordered_agents = ordered_agents[:max_planes]
+        elif len(ordered_agents) < max_planes:
+            ordered_agents = ordered_agents + [None] * (max_planes - len(ordered_agents))
+
+        empty = -1.0 * np.ones((self.mask_dim,), dtype=np.float32)
+        parts = []
+
+        for aid in ordered_agents:
+            if aid is None or aid not in action_dict:
+                parts.append(empty)
+            else:
+                encoded = self._encode_single_action_for_history(action_dict[aid])
+                parts.append(encoded)
+
+        self._last_actions_for_all_agents = np.concatenate(parts, axis=0).astype(np.float32)
 
 
 

@@ -176,18 +176,20 @@ if __name__ == "__main__":
         env_to_module_connector=None,
         )
         .training(
-            lr=3e-5,
-            # gamma=0.995,
-            # lambda_=0.95,
-            # clip_param=0.2,
+            lr=1e-4,
+            gamma=0.995,
+            lambda_=0.95,
+            clip_param=0.15,
+            use_kl_loss=False,
             # vf_loss_coeff=0.3,
             # kl_coeff=0.0,
-            # entropy_coeff=0.01,
+            entropy_coeff=0.01,
+            vf_clip_param = 500.0,
             model={
             "custom_model": "centralized_critic_model",
             "custom_model_config": {
-                "local_obs_dim": 3150, #126
-                "central_obs_dim": 3024,  # Adjust based on actual global
+                "local_obs_dim": 126, #126
+                "central_obs_dim": 3024 + (24*58),  # Adjust based on actual global
             }
             }
         )
@@ -223,3 +225,4 @@ if __name__ == "__main__":
 
     tuner.fit()
     ray.shutdown()
+

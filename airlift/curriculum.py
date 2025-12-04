@@ -503,7 +503,7 @@ class CurriculumGenerator:
         }
 
         test_cases[8] = {
-            "number_of_agents": 3,
+            "number_of_agents": 4,
             "number_of_airports": 3,
             "number_of_initial_cargo": 10,
             "max_cargo_per_episode": 10,
@@ -523,7 +523,7 @@ class CurriculumGenerator:
         }
 
         test_cases[9] = {
-            "number_of_agents": 3,
+            "number_of_agents": 4,
             "number_of_airports": 3,
             "number_of_initial_cargo": 11,
             "max_cargo_per_episode": 11,
@@ -563,7 +563,7 @@ class CurriculumGenerator:
         }
 
         test_cases[11] = {
-            "number_of_agents": 4,
+            "number_of_agents": 5,
             "number_of_airports": 3,
             "number_of_initial_cargo": 13,
             "max_cargo_per_episode": 13,
@@ -583,8 +583,8 @@ class CurriculumGenerator:
         }
 
         test_cases[12] = {
-            "number_of_agents": 4,
-            "number_of_airports": 3,
+            "number_of_agents": 5,
+            "number_of_airports": 4,
             "number_of_initial_cargo": 14,
             "max_cargo_per_episode": 14,
             "avg_working_capacity": 3.1797,
@@ -603,8 +603,8 @@ class CurriculumGenerator:
         }
 
         test_cases[13] = {
-            "number_of_agents": 4,
-            "number_of_airports": 3,
+            "number_of_agents": 5,
+            "number_of_airports": 4,
             "number_of_initial_cargo": 15,
             "max_cargo_per_episode": 15,
             "avg_working_capacity": 3.278,
@@ -623,8 +623,8 @@ class CurriculumGenerator:
         }
 
         test_cases[14] = {
-            "number_of_agents": 5,
-            "number_of_airports": 3,
+            "number_of_agents": 6,
+            "number_of_airports": 4,
             "number_of_initial_cargo": 16,
             "max_cargo_per_episode": 16,
             "avg_working_capacity": 3.3763,
@@ -643,8 +643,8 @@ class CurriculumGenerator:
         }
 
         test_cases[15] = {
-            "number_of_agents": 5,
-            "number_of_airports": 3,
+            "number_of_agents": 6,
+            "number_of_airports": 4,
             "number_of_initial_cargo": 17,
             "max_cargo_per_episode": 17,
             "avg_working_capacity": 3.4373,
@@ -664,7 +664,7 @@ class CurriculumGenerator:
 
         test_cases[16] = {
             "number_of_agents": 6,
-            "number_of_airports": 3,
+            "number_of_airports": 4,
             "number_of_initial_cargo": 18,
             "max_cargo_per_episode": 18,
             "avg_working_capacity": 3.4864,
@@ -683,8 +683,8 @@ class CurriculumGenerator:
         }
 
         test_cases[17] = {
-            "number_of_agents": 6,
-            "number_of_airports": 3,
+            "number_of_agents": 7,
+            "number_of_airports": 4,
             "number_of_initial_cargo": 19,
             "max_cargo_per_episode": 19,
             "avg_working_capacity": 3.678,
@@ -804,7 +804,7 @@ class CurriculumGenerator:
 
         test_cases[23] = {
             "number_of_agents": 9,
-            "number_of_airports": 4,
+            "number_of_airports": 5,
             "number_of_initial_cargo": 26,
             "max_cargo_per_episode": 26,
             "avg_working_capacity": 4.6525,
@@ -824,7 +824,7 @@ class CurriculumGenerator:
 
         test_cases[24] = {
             "number_of_agents": 10,
-            "number_of_airports": 4,
+            "number_of_airports": 5,
             "number_of_initial_cargo": 27,
             "max_cargo_per_episode": 27,
             "avg_working_capacity": 4.8983,
@@ -844,7 +844,7 @@ class CurriculumGenerator:
 
         test_cases[25] = {
             "number_of_agents": 10,
-            "number_of_airports": 4,
+            "number_of_airports": 5,
             "number_of_initial_cargo": 29,
             "max_cargo_per_episode": 29,
             "avg_working_capacity": 5.1441,
@@ -964,7 +964,7 @@ class CurriculumGenerator:
 
         test_cases[31] = {
             "number_of_agents": 13,
-            "number_of_airports": 6,
+            "number_of_airports": 7,
             "number_of_initial_cargo": 36,
             "max_cargo_per_episode": 36,
             "avg_working_capacity": 6.6186,
@@ -984,7 +984,7 @@ class CurriculumGenerator:
 
         test_cases[32] = {
             "number_of_agents": 14,
-            "number_of_airports": 6,
+            "number_of_airports": 7,
             "number_of_initial_cargo": 37,
             "max_cargo_per_episode": 37,
             "avg_working_capacity": 6.8644,
@@ -1004,7 +1004,7 @@ class CurriculumGenerator:
 
         test_cases[33] = {
             "number_of_agents": 14,
-            "number_of_airports": 6,
+            "number_of_airports": 7,
             "number_of_initial_cargo": 38,
             "max_cargo_per_episode": 38,
             "avg_working_capacity": 7.0,
@@ -1084,7 +1084,7 @@ class CurriculumGenerator:
 
         test_cases[37] = {
             "number_of_agents": 16,
-            "number_of_airports": 8,
+            "number_of_airports": 9,
             "number_of_initial_cargo": 43,
             "max_cargo_per_episode": 43,
             "avg_working_capacity": 7.5932,
@@ -1104,7 +1104,7 @@ class CurriculumGenerator:
 
         test_cases[38] = {
             "number_of_agents": 17,
-            "number_of_airports": 8,
+            "number_of_airports": 9,
             "number_of_initial_cargo": 44,
             "max_cargo_per_episode": 44,
             "avg_working_capacity": 7.839,
@@ -1124,7 +1124,7 @@ class CurriculumGenerator:
 
         test_cases[39] = {
             "number_of_agents": 17,
-            "number_of_airports": 8,
+            "number_of_airports": 9,
             "number_of_initial_cargo": 46,
             "max_cargo_per_episode": 46,
             "avg_working_capacity": 8.0847,
@@ -1144,7 +1144,7 @@ class CurriculumGenerator:
 
         test_cases[40] = {
             "number_of_agents": 18,
-            "number_of_airports": 8,
+            "number_of_airports": 9,
             "number_of_initial_cargo": 47,
             "max_cargo_per_episode": 47,
             "avg_working_capacity": 8.3305,
@@ -1164,7 +1164,7 @@ class CurriculumGenerator:
 
         test_cases[41] = {
             "number_of_agents": 18,
-            "number_of_airports": 8,
+            "number_of_airports": 9,
             "number_of_initial_cargo": 48,
             "max_cargo_per_episode": 48,
             "avg_working_capacity": 8.5763,
@@ -1264,7 +1264,7 @@ class CurriculumGenerator:
 
         test_cases[46] = {
             "number_of_agents": 21,
-            "number_of_airports": 10,
+            "number_of_airports": 11,
             "number_of_initial_cargo": 55,
             "max_cargo_per_episode": 55,
             "avg_working_capacity": 9.6831,
@@ -1284,7 +1284,7 @@ class CurriculumGenerator:
 
         test_cases[47] = {
             "number_of_agents": 21,
-            "number_of_airports": 10,
+            "number_of_airports": 11,
             "number_of_initial_cargo": 56,
             "max_cargo_per_episode": 56,
             "avg_working_capacity": 9.8203,
@@ -1304,7 +1304,7 @@ class CurriculumGenerator:
 
         test_cases[48] = {
             "number_of_agents": 22,
-            "number_of_airports": 12,
+            "number_of_airports": 11,
             "number_of_initial_cargo": 58,
             "max_cargo_per_episode": 58,
             "avg_working_capacity": 9.9186,
@@ -1324,7 +1324,7 @@ class CurriculumGenerator:
 
         test_cases[49] = {
             "number_of_agents": 22,
-            "number_of_airports": 12,
+            "number_of_airports": 11,
             "number_of_initial_cargo": 60,
             "max_cargo_per_episode": 60,
             "avg_working_capacity": 10.0424,
@@ -1344,7 +1344,7 @@ class CurriculumGenerator:
 
         test_cases[50] = {
             "number_of_agents": 23,
-            "number_of_airports": 12,
+            "number_of_airports": 11,
             "number_of_initial_cargo": 62,
             "max_cargo_per_episode": 62,
             "avg_working_capacity": 10.2881,
@@ -1541,7 +1541,6 @@ class CurriculumGenerator:
             "max_hard_deadline": 2843,
             "map_type": "plain",
         }
-
 
         return test_cases
 

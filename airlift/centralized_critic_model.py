@@ -1,4 +1,3 @@
-
 """
 The centralized critic custom model class
 """
@@ -138,7 +137,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         # Build local tensor (exclude 'globalstate') and ensure shape [B, F]
         if isinstance(obs, dict):
             # Keep only local observation fields for the actor
-            local_fields = {k: v for k, v in obs.items() if k not in ["action_mask"]}
+            local_fields = {k: v for k, v in obs.items() if k not in ["action_mask", "globalstate","previous_action"]}
             local_tensor = _to_2d_tensor(local_fields)
         else:
             local_tensor = _to_2d_tensor(obs)
@@ -181,63 +180,6 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
 
         return logits, state
        
-    #     obs = input_dict["obs"]
-
-    #     # Extract local_obs from obs
-    #     # if isinstance(obs, dict) and "observations" in obs:
-    #     #     local_obs = obs["observations"]
-    #     # else:
-    #     #     local_obs = obs
-        
-    #     local_obs_fields = [v for k, v in obs.items() if k != "globalstate"]
-    #     local_obs = torch.cat([torch.as_tensor(v, dtype=torch.float32).flatten() for v in local_obs_fields])
-
-    #     # Print for debugging
-    #     # print("\n[DEBUG] obs (raw from input_dict):", obs)
-    #     # print("[DEBUG] local_obs (before flattening):", local_obs)
-
-    #     CentralizedCriticModel._actor_calls += 1
-
-    #     # --- FIX: use collections.OrderedDict, not torch.OrderedDict ---
-    #     # if isinstance(local_obs, (dict, collections.OrderedDict)):
-    #     #     tensor_list = []
-    #     #     for v in local_obs.values():
-    #     #         if isinstance(v, (dict, collections.OrderedDict)):
-    #     #             tensor_list.extend([vv.flatten() for vv in v.values()])
-    #     #         else:
-    #     #             tensor_list.append(v.flatten())
-    #     #     local_obs = torch.cat(tensor_list)
-    #     # elif isinstance(local_obs, (list, tuple)):
-    #     #     tensor_list = [v.flatten() if isinstance(v, torch.Tensor) else torch.tensor(v).flatten() for v in local_obs]
-    #     #     local_obs = torch.cat(tensor_list)
-    #     # elif not isinstance(local_obs, torch.Tensor):
-    #     #     local_obs = torch.tensor(local_obs, dtype=torch.float32).flatten()
-
-    #     local_tensor = _to_2d_tensor(local_obs)               # [B, 344]
-    #     # print("[DEBUG] local_tensor shape:", tuple(local_tensor.shape))
-
-    #     # Give FCNet exactly what it expects.
-    #     local_input_dict = dict(input_dict)
-    #     local_input_dict["obs"] = local_tensor
-    #     local_input_dict["obs_flat"] = local_tensor
-
-    #     actor_out, _ = self.actor_net(local_input_dict, state, seq_lens)
-
-    #     # PERFORMANCE: Only log first 25 calls to avoid I/O overhead
-    #     if (CentralizedCriticModel._debug_logs_written < CentralizedCriticModel.MAX_DEBUG_LOGS and 
-    #         CentralizedCriticModel._actor_calls <= 25):
-    #         self._log_actor_debug(obs, local_obs)
-    #         CentralizedCriticModel._debug_logs_written += 1
-
-    #     # # Forward through actor network
-    #     # local_input_dict = input_dict.copy()
-    #     # local_input_dict["obs"] = local_obs
-
-    #     # actor_out, _ = self.actor_net(local_input_dict, state, seq_lens)
-
-    #     self._last_obs = obs
-
-    #     return actor_out, state
 
     @override(TorchModelV2)
     def value_function(self):
@@ -255,7 +197,11 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         # Extract centralized observation for critic
         # if isinstance(obs, dict):
             # Dict observation: use 'state' key for centralized observations
-        central_obs = obs["globalstate"] # if "state" in obs else obs["obs"]
+        central_obs = _to_2d_tensor({
+                "globalstate":      obs["globalstate"],
+                "previous_action":  obs["previous_action"],
+            })
+        # central_obs = obs["globalstate","previous_action"] # if "state" in obs else obs["obs"]
         # PERFORMANCE: Only log first 25 calls to avoid I/O overhead
         if (CentralizedCriticModel._debug_logs_written < CentralizedCriticModel.MAX_DEBUG_LOGS and 
             CentralizedCriticModel._critic_calls <= 25):
