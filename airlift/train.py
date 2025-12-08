@@ -176,15 +176,9 @@ if __name__ == "__main__":
         env_to_module_connector=None,
         )
         .training(
-            lr=1e-4,
-            gamma=0.995,
-            lambda_=0.95,
-            clip_param=0.15,
-            use_kl_loss=False,
-            # vf_loss_coeff=0.3,
-            # kl_coeff=0.0,
-            entropy_coeff=0.01,
-            vf_clip_param = 500.0,
+            lr=5e-5,
+            grad_clip = 0.5,  # or 1.0
+            num_epochs = 10,  # instead of 30
             model={
             "custom_model": "centralized_critic_model",
             "custom_model_config": {
@@ -225,4 +219,3 @@ if __name__ == "__main__":
 
     tuner.fit()
     ray.shutdown()
-
