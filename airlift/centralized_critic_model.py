@@ -88,6 +88,19 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         self.local_obs_dim    = int(cfg.get("local_obs_dim", 907))
         self.central_obs_dim  = int(cfg.get("central_obs_dim", 851))
 
+        
+        # Base local obs dim (without EGAT route features)
+        self.base_local_obs_dim = self.local_obs_dim
+
+        # EGAT-related dimensions
+        self.max_routes_per_airport = 14
+        self.egat_plane_edge_dim = 8
+        self.egat_cargo_edge_dim = 8
+        # Total extra features appended to local obs: 2 * R * H
+        self.egat_concat_dim = self.max_routes_per_airport * (self.egat_plane_edge_dim + self.egat_cargo_edge_dim)
+
+        # Final actor input dim = base local obs + EGAT features
+        self.actor_input_dim = self.base_local_obs_dim + self.egat_concat_dim
         print(f"   📏 Local obs dim: {self.local_obs_dim}")
         print(f"   🌍 Central obs dim: {self.central_obs_dim}")
         
@@ -98,7 +111,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
             "fcnet_activation": "relu",
         }
         
-        actor_obs_space = Box(low=-1.0, high=1.0, shape=(self.local_obs_dim,), dtype=np.float32)
+        actor_obs_space = Box(low=-1.0, high=1.0, shape=(self.actor_input_dim,), dtype=np.float32)
         self.actor_net = FullyConnectedNetwork(
             obs_space=actor_obs_space,
             action_space=action_space,
@@ -127,14 +140,14 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
 
         ## EGAT Setup
         self.route_egat = RouteEGATBlockDual(
-            plane_node_dim=...,        # per-airport plane feature size
-            cargo_node_dim=...,        # per-airport cargo feature size
-            edge_in_dim=...,           # per-route edge feature size
-            plane_edge_dim=8,          # output dim per route for planes
-            cargo_edge_dim=8,          # output dim per route for cargo
+            plane_node_dim=4,                     # per-airport plane feature size (num_planes, cap, load, frac)
+            cargo_node_dim=4,                     # per-airport cargo feature size (num_cargo, weight, urgency, avg)
+            edge_in_dim=3,                        # per-route edge feature size (time, cost, availability)
+            plane_edge_dim=self.egat_plane_edge_dim,   # output dim per route for planes
+            cargo_edge_dim=self.egat_cargo_edge_dim,   # output dim per route for cargo
             node_hidden_dim=64,
             attn_hidden_dim=64,
-            max_routes_per_airport=14,
+            max_routes_per_airport=self.max_routes_per_airport,
         )
 
     @override(TorchModelV2)
@@ -151,7 +164,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         # Build local tensor (exclude 'globalstate') and ensure shape [B, F]
         if isinstance(obs, dict):
             # Keep only local observation fields for the actor
-            local_fields = {k: v for k, v in obs.items() if k not in ["action_mask", "globalstate","previous_action"]}
+            local_fields = {k: v for k, v in obs.items() if k not in ["action_mask", "globalstate","previous_action","plane_node_feats","cargo_node_feats","route_edge_index","route_edge_attr"]}
             local_tensor = _to_2d_tensor(local_fields)
         else:
             local_tensor = _to_2d_tensor(obs)
@@ -164,16 +177,23 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         local_input_dict["obs"] = local_tensor
         local_input_dict["obs_flat"] = local_tensor
 
-        # 2) Extract EGAT inputs from obs (you’ll wire these up)
-        # e.g. they might have been flattened/padded and stored as arrays in obs
-        plane_node_feats  = torch.as_tensor(obs["plane_node_feats"])   # [N, F_plane] or [B, N, F_plane]
-        cargo_node_feats  = torch.as_tensor(obs["cargo_node_feats"])
-        edge_index        = torch.as_tensor(obs["edge_index"])         # [2, E]
-        edge_attr         = torch.as_tensor(obs["edge_attr"])
-        current_airport   = torch.as_tensor(obs["current_airport"]).long().view(-1)  # [B]
-        available_routes  = torch.as_tensor(obs["available_routes"]).long()          # [B, R]
+        # 2) Extract EGAT inputs from obs for route-level context
+        # Shapes (per batch):
+        #   plane_node_feats: [B, N_airports, 4]
+        #   cargo_node_feats: [B, N_airports, 4]
+        #   edge_index:       [B, 2, E_max]   (padded with -1)
+        #   edge_attr:        [B, E_max, 3]   (or [B, E_max, 3] depending on wrapper)
+        #   current_airport:  [B, 1]
+        #   available_routes: [B, R_max]
+        device = local_tensor.device
 
-        # 3) Run EGAT
+        plane_node_feats  = obs["plane_node_feats"].to(device)
+        cargo_node_feats  = obs["cargo_node_feats"].to(device)
+        edge_index        = obs["edge_index"].to(device).long()
+        edge_attr         = obs["edge_attr"].to(device)
+        current_airport   = obs["current_airport"].to(device).long().view(-1)   # [B]
+        available_routes  = obs["available_routes"].to(device).long()          # [B, R]
+# 3) Run EGAT
         plane_route_vec, cargo_route_vec = self.route_egat(
             plane_node_feats,
             cargo_node_feats,
