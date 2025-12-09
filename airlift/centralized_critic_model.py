@@ -42,7 +42,7 @@ import collections
 
 torch, nn = try_import_torch()
 
-from egat import RouteEGATBlockDual
+from egat import RouteEGATBlockUnified
 
 # Debug logging setup
 DEBUG_LOG_DIR = "debug_logs"
@@ -94,14 +94,16 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
 
         # EGAT-related dimensions
         self.max_routes_per_airport = 14
-        self.egat_plane_edge_dim = 8
-        self.egat_cargo_edge_dim = 8
-        # Total extra features appended to local obs: 2 * R * H
-        self.egat_concat_dim = self.max_routes_per_airport * (self.egat_plane_edge_dim + self.egat_cargo_edge_dim)
+        # We now use ONE EGAT and output a 3-dim vector per route (edge)
+        self.egat_edge_dim = 3
+        # Total extra features appended to local obs: R * H = 14 * 3
+        self.egat_concat_dim = self.max_routes_per_airport * self.egat_edge_dim
 
         # Final actor input dim = base local obs + EGAT features
         self.actor_input_dim = self.base_local_obs_dim + self.egat_concat_dim
+
         print(f"   📏 Local obs dim: {self.local_obs_dim}")
+        print(f"   🏗️ Local obs dim (with EGAT): {self.actor_input_dim}")
         print(f"   🌍 Central obs dim: {self.central_obs_dim}")
         
         # Create actor network (uses local observations)
@@ -138,13 +140,12 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         print(f"   ✅ Actor network: {self.local_obs_dim} → FC → {num_outputs}")
         print(f"   ✅ Critic network: {self.central_obs_dim} → 512 → 256 → 1")
 
-        ## EGAT Setup
-        self.route_egat = RouteEGATBlockDual(
-            plane_node_dim=4,                     # per-airport plane feature size (num_planes, cap, load, frac)
-            cargo_node_dim=4,                     # per-airport cargo feature size (num_cargo, weight, urgency, avg)
-            edge_in_dim=3,                        # per-route edge feature size (time, cost, availability)
-            plane_edge_dim=self.egat_plane_edge_dim,   # output dim per route for planes
-            cargo_edge_dim=self.egat_cargo_edge_dim,   # output dim per route for cargo
+        ## EGAT Setup (unified: plane + cargo → single edge embedding)
+        self.route_egat = RouteEGATBlockUnified(
+            plane_node_dim=4,                        # per-airport plane feature size (num_planes, cap, load, frac)
+            cargo_node_dim=4,                        # per-airport cargo feature size (num_cargo, weight, urgency, avg)
+            edge_in_dim=3,                           # per-route edge feature size (time, cost, availability)
+            edge_out_dim=self.egat_edge_dim,         # output dim per route (we want 3)
             node_hidden_dim=64,
             attn_hidden_dim=64,
             max_routes_per_airport=self.max_routes_per_airport,
@@ -164,7 +165,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         # Build local tensor (exclude 'globalstate') and ensure shape [B, F]
         if isinstance(obs, dict):
             # Keep only local observation fields for the actor
-            local_fields = {k: v for k, v in obs.items() if k not in ["action_mask", "globalstate","previous_action","plane_node_feats","cargo_node_feats","route_edge_index","route_edge_attr"]}
+            local_fields = {k: v for k, v in obs.items() if k not in ["action_mask", "globalstate","previous_action","plane_node_feats","cargo_node_feats","edge_index","edge_attr"]}
             local_tensor = _to_2d_tensor(local_fields)
         else:
             local_tensor = _to_2d_tensor(obs)
@@ -182,7 +183,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         #   plane_node_feats: [B, N_airports, 4]
         #   cargo_node_feats: [B, N_airports, 4]
         #   edge_index:       [B, 2, E_max]   (padded with -1)
-        #   edge_attr:        [B, E_max, 3]   (or [B, E_max, 3] depending on wrapper)
+        #   edge_attr:        [B, E_max, 3]
         #   current_airport:  [B, 1]
         #   available_routes: [B, R_max]
         device = local_tensor.device
@@ -193,26 +194,25 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         edge_attr         = obs["edge_attr"].to(device)
         current_airport   = obs["current_airport"].to(device).long().view(-1)   # [B]
         available_routes  = obs["available_routes"].to(device).long()          # [B, R]
-# 3) Run EGAT
-        plane_route_vec, cargo_route_vec = self.route_egat(
+
+        # 3) Run unified EGAT → one 3-dim vector per available route
+        route_vec = self.route_egat(
             plane_node_feats,
             cargo_node_feats,
             edge_index,
             edge_attr,
             current_airport,
             available_routes,
-        )  # each [B, R, H]
+        )  # [B, R, 3]
 
         # 4) Flatten route vectors and append to local obs
-        B, R, H = plane_route_vec.shape
-        plane_flat = plane_route_vec.reshape(B, R * H)   # [B, R*H]
-        cargo_flat = cargo_route_vec.reshape(B, R * H)   # [B, R*H]
+        B, R, H = route_vec.shape  # H should be 3
+        route_flat = route_vec.reshape(B, R * H)   # [B, R*H] = [B, 42]
 
-        local_tensor = torch.cat([local_tensor, plane_flat, cargo_flat], dim=-1)  # [B, F_local + 2*R*H]
+        local_tensor = torch.cat([local_tensor, route_flat], dim=-1)  # [B, F_local + R*H]
 
-        # 5) Cache for critic use later
-        self._last_plane_route_vec = plane_route_vec.detach()
-        self._last_cargo_route_vec = cargo_route_vec.detach()
+        # 5) Cache for potential debug/inspection later
+        self._last_route_vec = route_vec.detach()
 
         # 6) Normal actor logic
         local_input_dict = dict(input_dict)

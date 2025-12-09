@@ -204,6 +204,132 @@ class RouteEGATBlockDual(nn.Module):
 
         return plane_route_vec.to(device), cargo_route_vec.to(device)
 
+class RouteEGATBlockUnified(nn.Module):
+    """
+    Unified EGAT-style block that uses BOTH plane and cargo node features
+    to produce a single edge embedding per route.
+
+    Inputs:
+        plane_node_feats: [B, N, F_plane]
+        cargo_node_feats: [B, N, F_cargo]
+        edge_index:       [B, 2, E] or [2, E]   (src, dst indices per edge; padded with -1)
+        edge_attr:        [B, E, F_edge] or [E, F_edge]
+        current_airport:  [B] or scalar         (int indices into [0, N-1])
+        available_routes: [B, R_max] or [R_max] (destination node indices; padded with -1)
+
+    Output:
+        route_vec:        [B, max_routes_per_airport, edge_out_dim]
+
+    For each sample b and each slot r, we find the edge (current_airport[b] -> available_routes[b, r])
+    and use its edge embedding; if no such edge exists or the route is padded, we keep a zero vector.
+    """
+
+    def __init__(
+        self,
+        plane_node_dim: int,
+        cargo_node_dim: int,
+        edge_in_dim: int,
+        edge_out_dim: int,
+        node_hidden_dim: int,
+        attn_hidden_dim: int,
+        max_routes_per_airport: int,
+    ) -> None:
+        super().__init__()
+        self.edge_out_dim = edge_out_dim
+        self.max_routes_per_airport = max_routes_per_airport
+
+        combined_node_dim = plane_node_dim + cargo_node_dim
+
+        # Single EGAT encoder over combined (plane + cargo) node features
+        self.egat = EGATEdgeEncoder(
+            node_in_dim=combined_node_dim,
+            edge_in_dim=edge_in_dim,
+            node_hidden_dim=node_hidden_dim,
+            attn_hidden_dim=attn_hidden_dim,
+            edge_out_dim=edge_out_dim,
+        )
+
+    def forward(
+        self,
+        plane_node_feats: Tensor,    # [B, N, F_plane] or [N, F_plane]
+        cargo_node_feats: Tensor,    # [B, N, F_cargo] or [N, F_cargo]
+        edge_index: Tensor,          # [B, 2, E] or [2, E]
+        edge_attr: Tensor,           # [B, E, F_edge] or [E, F_edge]
+        current_airport: Tensor,     # [B] or scalar
+        available_routes: Tensor,    # [B, R_max] or [R_max]
+    ) -> Tensor:
+        device = plane_node_feats.device
+
+        # Ensure batch dimension B
+        if plane_node_feats.ndim == 2:
+            plane_node_feats = plane_node_feats.unsqueeze(0)
+        if cargo_node_feats.ndim == 2:
+            cargo_node_feats = cargo_node_feats.unsqueeze(0)
+
+        if edge_index.ndim == 2:
+            edge_index = edge_index.unsqueeze(0)
+        if edge_attr.ndim == 2:
+            edge_attr = edge_attr.unsqueeze(0)
+
+        if current_airport.ndim == 0:
+            current_airport = current_airport.view(1)
+        if available_routes.ndim == 1:
+            available_routes = available_routes.view(1, -1)
+
+        B, N, _ = plane_node_feats.shape
+        _, _, F_edge = edge_attr.shape
+        _, R_max = available_routes.shape
+
+        # Preallocate [B, max_routes_per_airport, 3] and keep zeros for padding
+        route_vec = plane_node_feats.new_zeros(
+            (B, self.max_routes_per_airport, self.edge_out_dim)
+        )
+
+        for b in range(B):
+            x_plane_b = plane_node_feats[b]          # [N, F_plane]
+            x_cargo_b = cargo_node_feats[b]          # [N, F_cargo]
+            # Combine plane + cargo features at node level
+            x_node_b = torch.cat([x_plane_b, x_cargo_b], dim=-1)  # [N, F_plane + F_cargo]
+
+            e_idx_b = edge_index[b]                  # [2, E]
+            e_attr_b = edge_attr[b]                  # [E, F_edge]
+
+            # Filter out padded edges (marked with -1 in src or dst)
+            if e_idx_b.numel() == 0:
+                continue
+            valid_mask = (e_idx_b[0] >= 0) & (e_idx_b[1] >= 0)
+            if valid_mask.sum() == 0:
+                continue
+
+            e_idx_valid = e_idx_b[:, valid_mask]     # [2, E_valid]
+            e_attr_valid = e_attr_b[valid_mask]      # [E_valid, F_edge]
+
+            # Compute edge embeddings for this sample (size edge_out_dim = 3)
+            _, edge_emb_b = self.egat(x_node_b, e_idx_valid, e_attr_valid)  # [E_valid, edge_out_dim]
+
+            curr = int(current_airport[b].item())
+            dests = available_routes[b]  # [R_max]
+
+            # For each route slot r, find the matching edge (curr -> dest)
+            for r_idx in range(min(self.max_routes_per_airport, R_max)):
+                dest = int(dests[r_idx].item())
+                if dest < 0:
+                    # padded route slot → leave zero vector
+                    continue
+
+                matches = torch.nonzero(
+                    (e_idx_valid[0] == curr) & (e_idx_valid[1] == dest),
+                    as_tuple=False,
+                )
+                if matches.numel() == 0:
+                    # No explicit edge matching this route; keep zero vector
+                    continue
+
+                e_ind = int(matches[0, 0].item())
+                route_vec[b, r_idx] = edge_emb_b[e_ind]
+
+        return route_vec.to(device)
+
 
 if __name__ == "__main__":
     # Quick shape sanity test
@@ -249,4 +375,6 @@ if __name__ == "__main__":
     )
     print("plane_route_vec:", pr.shape)
     print("cargo_route_vec:", cr.shape)
+
+
 
