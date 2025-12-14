@@ -59,7 +59,7 @@ from ray.rllib.utils.framework import try_import_torch  # just to ensure torch i
 _, _ = try_import_torch()
 
 # ---- training config ----
-training_iteration = 10000
+training_iteration = 100000
 
 # Create curriculum map object - this gets shared across all environment instances
 curriculum_map = DifficultyProgressionMap(seed=int(time.time()) % 10000)
