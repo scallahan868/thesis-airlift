@@ -92,7 +92,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         # Create actor network (uses local observations)
         # Create the correct observation space for the actor (74 dim)
         actor_model_config = {
-            "fcnet_hiddens": [512, 512, 256],
+            "fcnet_hiddens": [256, 256],
             "fcnet_activation": "relu",
         }
         
@@ -112,9 +112,9 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
         
         # Create a simple fully connected network for the critic
         self.critic_net = nn.Sequential(
-            nn.Linear(self.central_obs_dim, 512),
-            nn.ReLU(),
-            nn.Linear(512, 256),
+            nn.Linear(self.central_obs_dim, 256),
+            # nn.ReLU(),
+            # nn.Linear(512, 256),
             nn.ReLU(),
             nn.Linear(256, 1),
         )
