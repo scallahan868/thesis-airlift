@@ -137,25 +137,12 @@ class AirliftSimpleFlattenWrapper:
         wg = getattr(self.env, "world_generator", None)
 
         # Fixed, numeric limits (store as attributes — not callables)
-        # self.max_cargo_per_plane = int(
-        #     getattr(wg, "max_cargo_per_plane",
-        #             getattr(wg, "max_cargo_per_episode", 64)) or 64
-        # )
-        self.max_cargo_per_plane = int(23)
-        # If env doesn't expose a per-airport cap, use per-episode as a safe upper bound.
-        # self.max_cargo_per_airport = int(
-        #     getattr(wg, "max_cargo_per_airport",
-        #             getattr(wg, "max_cargo_per_episode", 64)) or 64
-        # )
+        self.max_cargo_per_plane = int(15)
         self.max_cargo_per_airport = int(20)
-        # If env doesn't expose this, use max_airports as a conservative cap.
-        # self.max_routes_per_airport = int(
-        #     getattr(wg, "max_routes_per_airport",
-        #             getattr(wg, "max_airports", 32)) or 32
-        # )
-        self.max_routes_per_airport = int(14)
-
-        self.max_agents = int(24)
+        self.max_routes_per_airport = int(5)
+        self.max_agents = int(12)
+        self.max_cargo_per_episode = int(36)
+        self.max_airports = int(6)
 
         # For action list padding (used by debug scaffolding / future action adapters)
         self._action_maxlens = {
@@ -163,14 +150,6 @@ class AirliftSimpleFlattenWrapper:
             "cargo_to_unload": self.max_cargo_per_plane,
         }
 
-        # self.max_cargo_per_episode = int(getattr(wg, "max_cargo_per_episode", 256) or 256)
-        # self.max_airports = int(getattr(wg, "max_airports", 64) or 64)
-        # self.num_possible_agents = len(getattr(self.env, "possible_agents", []))
-        # self._last_central_state = None 
-
-        self.max_cargo_per_episode = int(72)
-        self.max_airports = int(12)
-        self.num_possible_agents = int(24)
         self._last_central_state = None 
 
         # Total number of logits / action entries
@@ -189,7 +168,7 @@ class AirliftSimpleFlattenWrapper:
         )
 
         # Total size of previous_action vector: one mask_dim per plane slot
-        self.prev_action_dim = int(self.num_possible_agents) * int(self.prev_action_per_plane_dim)
+        self.prev_action_dim = int(self.max_agents) * int(self.prev_action_per_plane_dim)
 
         # Buffer for previous actions (concatenated over all planes)
         self._last_actions_for_all_agents = None
@@ -412,17 +391,15 @@ class AirliftSimpleFlattenWrapper:
             "state":                    Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
             "current_airport":          Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
             "available_routes":         Box(-np.inf, np.inf, shape=(self.max_routes_per_airport,), dtype=np.float32),
-            # "onboard_count":            Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
             "cargo_destinations":       Box(-np.inf, np.inf, shape=(self.max_cargo_per_plane,), dtype=np.float32),
             "cargo_at_current_airport": Box(-np.inf, np.inf, shape=(self.max_cargo_per_airport,), dtype=np.float32),
             "cargo_at_current_airport_urgency": Box(-np.inf, np.inf, shape=(self.max_cargo_per_airport,), dtype=np.float32),
             "cargo_onboard":            Box(-np.inf, np.inf, shape=(self.max_cargo_per_plane,), dtype=np.float32),
             "cargo_onboard_urgency":    Box(-np.inf, np.inf, shape=(self.max_cargo_per_plane,), dtype=np.float32),
-            # "is_moving":                Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
             "load_frac":                Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
 
             # --- centralized critic input (shared vector you attach to each agent) ---
-            "globalstate":              Box(-np.inf, np.inf, shape=((3 + self.max_routes_per_airport + 2*self.max_cargo_per_plane + 2*self.max_cargo_per_airport + self.max_cargo_per_plane)*24,), dtype=np.float32),
+            "globalstate":              Box(-np.inf, np.inf, shape=((3 + self.max_routes_per_airport + 2*self.max_cargo_per_plane + 2*self.max_cargo_per_airport + self.max_cargo_per_plane)*self.max_agents,), dtype=np.float32),
 
             # --- NEW: previous actions for all planes ---
             # Values will be in {-1, 0, 1}: -1 for padding / "no action yet",
@@ -558,7 +535,7 @@ class AirliftSimpleFlattenWrapper:
         parts = []
 
         # Max number of planes (slots) we ever want in the centralized state
-        max_planes = getattr(self, "num_possible_agents", len(obs))
+        max_planes = self.max_agents
 
         # Use a stable ordering: env.possible_agents if available, otherwise current obs keys
         ordered_agents = list(getattr(self.env, "possible_agents", [])) or list(obs.keys())
@@ -674,7 +651,7 @@ class AirliftSimpleFlattenWrapper:
 
     def _central_state_dim_compact(self) -> int:
         # Prefer the env’s possible_agents if available; fall back to a configured value.
-        n_agents = len(getattr(self.env, "possible_agents", [])) or getattr(self, "num_possible_agents", 0)
+        n_agents = self.max_agents
         return n_agents * self._compact_per_agent_dim()
 
     def _decode_action_from_flat(self, agent_id, flat_action):
@@ -914,7 +891,7 @@ class AirliftSimpleFlattenWrapper:
         """
         import numpy as np
 
-        max_planes = getattr(self, "num_possible_agents", len(action_dict))
+        max_planes = getattr(self, "max_agents", len(action_dict))
         ordered_agents = list(getattr(self.env, "possible_agents", [])) or list(action_dict.keys())
 
         if len(ordered_agents) > max_planes:
