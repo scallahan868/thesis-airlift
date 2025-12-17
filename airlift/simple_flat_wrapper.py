@@ -173,6 +173,14 @@ class AirliftSimpleFlattenWrapper:
         self.num_possible_agents = int(24)
         self._last_central_state = None 
 
+        # --- Graph feature sizing (for EGAT) ---
+        # Node features per airport: [#aircraft, #packages, cumulative_urgency, airport_type, degree]
+        self.node_feat_dim = 5
+        # Edge features per route: [distance, is_available]
+        self.edge_feat_dim = 2
+        # Conservative static cap on number of directed edges
+        self.max_edges = int(self.max_airports) * int(self.max_routes_per_airport)
+
         # Total number of logits / action entries
         self.mask_dim = (
             2 * self.max_cargo_per_airport
@@ -411,6 +419,7 @@ class AirliftSimpleFlattenWrapper:
             # --- per-agent compact fields ---
             "state":                    Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
             "current_airport":          Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
+            "current_airport_idx":      Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
             "available_routes":         Box(-np.inf, np.inf, shape=(self.max_routes_per_airport,), dtype=np.float32),
             # "onboard_count":            Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
             "cargo_destinations":       Box(-np.inf, np.inf, shape=(self.max_cargo_per_plane,), dtype=np.float32),
@@ -420,10 +429,6 @@ class AirliftSimpleFlattenWrapper:
             "cargo_onboard_urgency":    Box(-np.inf, np.inf, shape=(self.max_cargo_per_plane,), dtype=np.float32),
             # "is_moving":                Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
             "load_frac":                Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
-            "plane_node_feats":        Box(-np.inf, np.inf, shape=(self.max_airports, 4), dtype=np.float32),
-            "cargo_node_feats":        Box(-np.inf, np.inf, shape=(self.max_airports, 4), dtype=np.float32),
-            "edge_index":              Box(-np.inf, np.inf, shape=(2, self.max_airports * self.max_routes_per_airport), dtype=np.float32),
-            "edge_attr":               Box(-np.inf, np.inf, shape=(self.max_airports * self.max_routes_per_airport, 3), dtype=np.float32),
 
             # --- centralized critic input (shared vector you attach to each agent) ---
             "globalstate":              Box(-np.inf, np.inf, shape=((3 + self.max_routes_per_airport + 2*self.max_cargo_per_plane + 2*self.max_cargo_per_airport + self.max_cargo_per_plane)*24,), dtype=np.float32),
@@ -440,227 +445,215 @@ class AirliftSimpleFlattenWrapper:
 
             # -- action mask --
             "action_mask": Box(low=0.0, high=1.0, shape=(mask_dim,), dtype=np.float32),
+
+            # --- NEW: Graph inputs for EGAT (actor augmentation) ---
+            # node_features: [max_airports, 5]
+            "node_features": Box(-np.inf, np.inf, shape=(self.max_airports, self.node_feat_dim), dtype=np.float32),
+            # edge_features: [max_edges, 2]
+            "edge_features": Box(-np.inf, np.inf, shape=(self.max_edges, self.edge_feat_dim), dtype=np.float32),
+            # edge_index: [2, max_edges] (padded with -1)
+            "edge_index": Box(-1.0, float(self.max_airports - 1), shape=(2, self.max_edges), dtype=np.float32),
         })
+
 
         self._observation_space_cache[agent_id] = space
         return space
 
     def close(self):
         return self.env.close()
-    def _build_plane_node_feats(self, obs: Dict[str, Any]) -> np.ndarray:
-        """
-        Build per-airport plane node features.
 
+    # ---------------------------------------------------------------------
+    # Graph feature extraction for EGAT (actor augmentation)
+    # ---------------------------------------------------------------------
+
+    def _route_graph_nx(self):
+        """Best-effort access to the environment's route graph as a networkx.DiGraph."""
+        env = getattr(self, "env", None)
+        ue = getattr(env, "unwrapped", env)
+
+        # Common names we've seen in Airlift-like envs/wrappers
+        for name in ("route_graph", "routes_graph", "route_map", "routes", "graph", "network", "G"):
+            g = getattr(ue, name, None)
+            if isinstance(g, nx.DiGraph):
+                return g
+
+        # Sometimes nested under a 'world' object
+        world = getattr(ue, "world", None) or getattr(ue, "_world", None)
+        if world is not None:
+            for name in ("route_graph", "routes_graph", "route_map", "graph", "G"):
+                g = getattr(world, name, None)
+                if isinstance(g, nx.DiGraph):
+                    return g
+
+        # Last resort: if the world generator exposes a graph
+        wg = getattr(ue, "world_generator", None)
+        if wg is not None:
+            for name in ("route_graph", "routes_graph", "route_map", "graph", "G"):
+                g = getattr(wg, name, None)
+                if isinstance(g, nx.DiGraph):
+                    return g
+
+        return None
+
+    def get_edge_features(self):
+        """
         Returns:
-            plane_node_feats: [max_airports, 4] float32
-                For each airport i, features are:
-                    [ num_planes,
-                      total_capacity,
-                      total_load,
-                      load_fraction ]
+            edge_index: float32 array shape (2, max_edges), padded with -1
+            edge_features: float32 array shape (max_edges, 2) where [:,0]=distance, [:,1]=is_available
         """
-        num_airports = int(getattr(self, 'max_airports', 0) or 0)
-        if num_airports <= 0:
-            return np.zeros((0, 0), dtype=np.float32)
+        edge_index = -1.0 * np.ones((2, self.max_edges), dtype=np.float32)
+        edge_features = np.zeros((self.max_edges, self.edge_feat_dim), dtype=np.float32)
 
-        num_planes = np.zeros((num_airports,), dtype=np.float32)
-        total_cap  = np.zeros((num_airports,), dtype=np.float32)
-        total_load = np.zeros((num_airports,), dtype=np.float32)
+        G = self._route_graph_nx()
+        if G is None:
+            return edge_index, edge_features
 
-        # Aggregate per-airport from raw agent observations
-        for aobs in (obs or {}).values():
-            cur_ap = aobs.get('current_airport', -1)
+        # Ensure nodes 0..max_airports-1 exist for consistent indexing
+        for n in range(self.max_airports):
+            if n not in G:
+                G.add_node(n)
+
+        # Collect directed edges (u,v,data) up to max_edges
+        k = 0
+        for u, v, data in G.edges(data=True):
+            if k >= self.max_edges:
+                break
             try:
-                ap = int(cur_ap)
+                ui = int(u); vi = int(v)
             except Exception:
-                ap = -1
-            if ap < 0 or ap >= num_airports:
+                continue
+            if not (0 <= ui < self.max_airports and 0 <= vi < self.max_airports):
                 continue
 
-            cw = float(aobs.get('current_weight', 0.0) or 0.0)
-            mw = float(aobs.get('max_weight', 0.0) or 0.0)
-
-            num_planes[ap] += 1.0
-            total_cap[ap]  += mw
-            total_load[ap] += cw
-
-        plane_node_feats = np.zeros((num_airports, 4), dtype=np.float32)
-        for ap in range(num_airports):
-            cap = total_cap[ap]
-            load = total_load[ap]
-            load_frac = float(load / cap) if cap > 0.0 else 0.0
-
-            plane_node_feats[ap, :] = [
-                num_planes[ap],
-                cap,
-                load,
-                load_frac,
-            ]
-
-        return plane_node_feats
-
-    def _build_cargo_node_feats(self, active_cargo: Iterable[Any]) -> np.ndarray:
-        """
-        Build per-airport cargo node features from the global active cargo list.
-
-        Args:
-            active_cargo: iterable of CargoObservation or dict-like objects
-                          (typically state['active_cargo']).
-
-        Returns:
-            cargo_node_feats: [max_airports, 4] float32
-                For each airport i, features are:
-                    [ num_cargo,
-                      total_weight,
-                      total_urgency,
-                      avg_urgency ]
-        """
-        num_airports = int(getattr(self, 'max_airports', 0) or 0)
-        if num_airports <= 0:
-            return np.zeros((0, 0), dtype=np.float32)
-
-        num_cargo     = np.zeros((num_airports,), dtype=np.float32)
-        total_weight  = np.zeros((num_airports,), dtype=np.float32)
-        total_urgency = np.zeros((num_airports,), dtype=np.float32)
-
-        # Current time-step (for urgency)
-        current_step = float(getattr(self.env, '_elapsed_steps', 0) or 0.0)
-
-        for cg in (active_cargo or []):
-            # Robust attribute / dict access
-            loc = getattr(cg, 'location', None)
-            if loc is None and isinstance(cg, dict):
-                loc = cg.get('location', None)
-
+            # distance
+            dist = data.get("distance", data.get("dist", data.get("length", 0.0)))
             try:
-                ap = int(loc)
+                dist = float(dist)
             except Exception:
-                ap = -1
-            if ap < 0 or ap >= num_airports:
-                continue
+                dist = 0.0
 
-            w = getattr(cg, 'weight', None)
-            if w is None and isinstance(cg, dict):
-                w = cg.get('weight', 0.0)
-            w = float(w or 0.0)
-
-            hard_deadline = getattr(cg, 'hard_deadline', None)
-            if hard_deadline is None and isinstance(cg, dict):
-                hard_deadline = cg.get('hard_deadline', None)
-
-            urgency = 0.0
-            if hard_deadline is not None:
+            # availability (default: available)
+            avail = data.get("is_available", data.get("available", None))
+            if avail is None:
+                blocked = data.get("blocked", data.get("is_blocked", 0))
                 try:
-                    time_left = float(hard_deadline) - current_step
-                    urgency = max(0.0, 1.0 / max(time_left, 1.0))
+                    blocked = int(blocked)
                 except Exception:
-                    urgency = 0.0
-
-            num_cargo[ap]     += 1.0
-            total_weight[ap]  += w
-            total_urgency[ap] += float(urgency)
-
-        cargo_node_feats = np.zeros((num_airports, 4), dtype=np.float32)
-        for ap in range(num_airports):
-            n = num_cargo[ap]
-            avg_urg = float(total_urgency[ap] / n) if n > 0.0 else 0.0
-
-            cargo_node_feats[ap, :] = [
-                num_cargo[ap],
-                total_weight[ap],
-                total_urgency[ap],
-                avg_urg,
-            ]
-
-        return cargo_node_feats
-
-    def _build_route_edge_index(self, state: Dict[str, Any]) -> np.ndarray:
-        """
-        Build padded edge_index for the route graph from the global state.
-
-        Returns:
-            edge_index: [2, max_edges] int64
-                edge_index[:, e] = [src, dst] for real edges, or [-1, -1] for padding.
-        """
-        max_airports = int(getattr(self, 'max_airports', 0) or 0)
-        max_routes_per_airport = int(getattr(self, 'max_routes_per_airport', 0) or 0)
-        max_edges = max_airports * max_routes_per_airport
-        if max_airports <= 0 or max_edges <= 0:
-            return np.zeros((2, 0), dtype=np.int64)
-
-        route_map_dict = (state or {}).get('route_map', {}) or {}
-        if not route_map_dict:
-            # Fill with -1 to denote "no edge"
-            edge_index = -1 * np.ones((2, max_edges), dtype=np.int64)
-            return edge_index
-
-        # Use the first plane type's DiGraph as the canonical route map
-        first_key = sorted(route_map_dict.keys())[0]
-        g = route_map_dict[first_key]
-
-        edges = list(g.edges())
-        edge_index = -1 * np.ones((2, max_edges), dtype=np.int64)
-
-        for eid, (u, v) in enumerate(edges):
-            if eid >= max_edges:
-                break
-            edge_index[0, eid] = int(u)
-            edge_index[1, eid] = int(v)
-
-        return edge_index
-
-    def _build_route_edge_attr(self, state: Dict[str, Any]) -> np.ndarray:
-        """
-        Build padded edge_attr for the route graph from the global state.
-
-        Returns:
-            edge_attr: [max_edges, 3] float32
-                For each real edge, features are:
-                    [ time, cost, route_available ]
-                Remaining rows are zeros.
-        """
-        max_airports = int(getattr(self, 'max_airports', 0) or 0)
-        max_routes_per_airport = int(getattr(self, 'max_routes_per_airport', 0) or 0)
-        max_edges = max_airports * max_routes_per_airport
-        if max_airports <= 0 or max_edges <= 0:
-            return np.zeros((0, 3), dtype=np.float32)
-
-        route_map_dict = (state or {}).get('route_map', {}) or {}
-        if not route_map_dict:
-            return np.zeros((max_edges, 3), dtype=np.float32)
-
-        first_key = sorted(route_map_dict.keys())[0]
-        g = route_map_dict[first_key]
-
-        edges = list(g.edges(data=True))
-        edge_attr = np.zeros((max_edges, 3), dtype=np.float32)
-
-        for eid, (u, v, data) in enumerate(edges):
-            if eid >= max_edges:
-                break
-
-            # Robust dict-like access for attributes
-            time_val = data.get('time', 0.0)
-            cost_val = data.get('cost', 0.0)
-            avail    = data.get('route_available', 1.0)
-
+                    blocked = 0
+                avail = 0 if blocked else 1
             try:
-                time_val = float(time_val)
+                avail = float(int(avail))
             except Exception:
-                time_val = 0.0
+                avail = 1.0
+
+            edge_index[0, k] = float(ui)
+            edge_index[1, k] = float(vi)
+            edge_features[k, 0] = dist
+            edge_features[k, 1] = avail
+            k += 1
+
+        return edge_index, edge_features
+
+    def get_node_features(self, raw_obs: Dict[str, Any], active_cargo_list):
+        """
+        Node features per airport (shape [max_airports, 5]):
+            0: number of aircraft currently at airport
+            1: number of packages currently at airport
+            2: cumulative urgency of packages currently at airport
+            3: airport type (-1 source, 0 normal, 1 destination) inferred from active cargo origin/destination
+            4: out-degree of airport in route graph
+        """
+        node_feats = np.zeros((self.max_airports, self.node_feat_dim), dtype=np.float32)
+
+        # ---- aircraft counts from raw_obs (agent current_airport) ----
+        for aid, aobs in (raw_obs or {}).items():
             try:
-                cost_val = float(cost_val)
+                ap = int(aobs.get("current_airport", -1))
             except Exception:
-                cost_val = 0.0
+                ap = -1
+            if 0 <= ap < self.max_airports:
+                node_feats[ap, 0] += 1.0
+
+        # ---- package counts + urgency from active cargo list ----
+        # Try to locate each cargo at an airport using common attribute names.
+        def cargo_loc(cg):
+            for key in ("current_airport", "location", "loc", "airport", "at_airport", "position"):
+                val = getattr(cg, key, None)
+                if val is None and isinstance(cg, dict):
+                    val = cg.get(key)
+                if val is not None:
+                    return val
+            return None
+
+        # urgency helper (same shape as in flatten_obs)
+        def cargo_urgency(cg):
+            hard_deadline = getattr(cg, "hard_deadline", None)
+            if hard_deadline is None and isinstance(cg, dict):
+                hard_deadline = cg.get("hard_deadline")
+            if hard_deadline is None:
+                return 0.0
             try:
-                avail = float(avail)
+                time_left = float(hard_deadline) - float(getattr(self.env, "_elapsed_steps", 0))
+                return float(max(0.0, 1.0 / max(time_left, 1.0)))
             except Exception:
-                avail = 0.0
+                return 0.0
 
-            edge_attr[eid, :] = [time_val, cost_val, avail]
+        # airport types from cargo origins/destinations
+        sources = set()
+        dests = set()
+        for cg in (active_cargo_list or []):
+            orig = getattr(cg, "origin", None)
+            if orig is None and isinstance(cg, dict):
+                orig = cg.get("origin")
+            dst = getattr(cg, "destination", None)
+            if dst is None and isinstance(cg, dict):
+                dst = cg.get("destination")
+            try:
+                if orig is not None:
+                    sources.add(int(orig))
+            except Exception:
+                pass
+            try:
+                if dst is not None:
+                    dests.add(int(dst))
+            except Exception:
+                pass
 
-        return edge_attr
+            loc = cargo_loc(cg)
+            try:
+                li = int(loc)
+            except Exception:
+                li = -1
+            if 0 <= li < self.max_airports:
+                node_feats[li, 1] += 1.0
+                node_feats[li, 2] += cargo_urgency(cg)
 
+        for i in range(self.max_airports):
+            if i in dests:
+                node_feats[i, 3] = 1.0
+            elif i in sources:
+                node_feats[i, 3] = -1.0
+            else:
+                node_feats[i, 3] = 0.0
+
+        # ---- degree from route graph (out-degree) ----
+        G = self._route_graph_nx()
+        if G is not None:
+            for i in range(self.max_airports):
+                try:
+                    node_feats[i, 4] = float(G.out_degree(i))
+                except Exception:
+                    node_feats[i, 4] = 0.0
+
+        return node_feats
+
+    def get_graph_data(self, raw_obs: Dict[str, Any], active_cargo_list):
+        """
+        Convenience wrapper: returns (node_features, edge_index, edge_features).
+        """
+        node_features = self.get_node_features(raw_obs, active_cargo_list)
+        edge_index, edge_features = self.get_edge_features()
+        return node_features, edge_index, edge_features
 
     def flatten_obs(self, obs: Dict[str, Any]) -> Dict[str, Dict[str, np.ndarray]]:
         import numpy as np
@@ -675,21 +668,12 @@ class AirliftSimpleFlattenWrapper:
             return out
 
         # ---- Build cargo_id -> destination (object-safe) ----
-        # ---- Build cargo_id -> destination (object-safe) ----
         # Grab active_cargo from any agent's globalstate
         any_agent = next(iter(obs)) if obs else None
-        gs = {}
         active_list = []
         if any_agent is not None:
-            gs = (obs[any_agent] or {}).get('globalstate', {}) or {}
-            active_list = gs.get('active_cargo', []) or []
-
-        # --- Build graph features for EGAT (shared across agents) ---
-        plane_node_feats = self._build_plane_node_feats(obs)
-        cargo_node_feats = self._build_cargo_node_feats(active_list)
-        edge_index = self._build_route_edge_index(gs)
-        edge_attr = self._build_route_edge_attr(gs)
-
+            gs = (obs[any_agent] or {}).get("globalstate", {}) or {}
+            active_list = gs.get("active_cargo", []) or []
 
         # CargoObservation objects -> use attribute access; dicts would still work via getattr fallback
         id_to_dest = {}
@@ -708,6 +692,14 @@ class AirliftSimpleFlattenWrapper:
             PS_MOVING = int(self.env.PlaneState.MOVING)  # if available
         except Exception:
             pass
+
+        # --- NEW: compute graph features once per step (shared across agents) ---
+        try:
+            node_features, edge_index, edge_features = self.get_graph_data(obs, active_list)
+        except Exception:
+            node_features = np.zeros((self.max_airports, self.node_feat_dim), dtype=np.float32)
+            edge_index = -1.0 * np.ones((2, self.max_edges), dtype=np.float32)
+            edge_features = np.zeros((self.max_edges, self.edge_feat_dim), dtype=np.float32)
 
         flattened_obs: Dict[str, Dict[str, np.ndarray]] = {}
 
@@ -778,10 +770,12 @@ class AirliftSimpleFlattenWrapper:
                 "cargo_onboard_urgency":   v_onboard_urgency,
                 # "is_moving":               v_is_moving,
                 "load_frac":               v_load_frac,
-                "plane_node_feats":        plane_node_feats,
-                "cargo_node_feats":        cargo_node_feats,
+                # --- NEW: EGAT inputs (shared tensors + per-agent index) ---
+                "current_airport_idx":     v_current_airport,   # same scalar as current_airport
+                "node_features":           node_features,
+                "edge_features":           edge_features,
                 "edge_index":              edge_index,
-                "edge_attr":               edge_attr,
+
             }
 
          # Build shared globalstate by concatenating each agent’s compact vector (use flattened_obs, not outer vars)

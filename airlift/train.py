@@ -182,8 +182,31 @@ if __name__ == "__main__":
             model={
             "custom_model": "centralized_critic_model",
             "custom_model_config": {
-                "local_obs_dim": 126, # + 28, #126
-                "central_obs_dim": 3024 + (24*58), # + (24*28),  # Adjust based on actual global
+                # ---- existing dims (unchanged for critic) ----
+                "local_obs_dim": 126,  
+                "central_obs_dim": 3024 + (24 * 58),
+
+                # ---- EGAT ENABLED FOR ACTOR ONLY ----
+                "enable_egat": True,
+
+                # ---- EGAT ARCHITECTURE ----
+                "gat_num_layers": 3,
+                "gat_num_heads": 3,
+
+                # Input feature sizes from env
+                "gat_in_node_feats": 28,     # must match node_features.shape[-1]
+                "gat_in_edge_feats": 24,     # must match edge_features.shape[-1]
+
+                # Hidden / output sizes per head
+                "gat_hidden_node_feats": 16,
+                "gat_hidden_edge_feats": 16,
+                "gat_out_node_feats": 16,
+                "gat_out_edge_feats": 16,
+
+                # Actor will receive:
+                #   local_obs || airport_node_embedding
+                # airport_node_embedding dim = num_heads * gat_out_node_feats
+                "gat_project_dim": 3 * 16,   # = 48
             }
             }
         )
