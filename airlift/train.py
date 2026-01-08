@@ -183,13 +183,28 @@ if __name__ == "__main__":
             # vf_loss_coeff=0.3,
             # kl_coeff=0.0,
             # entropy_coeff=0.01,
-            model={
-            "custom_model": "centralized_critic_model",
-            "custom_model_config": {
-                "local_obs_dim": 3150, #126
-                "central_obs_dim": 3024,  # Adjust based on actual global
-            }
-            }
+            model = {
+                "custom_model": "centralized_critic_model",
+                "custom_model_config": {
+                    "local_obs_dim": 94,
+                    "central_obs_dim": 1620,
+
+                    "enable_gat": True,
+                    "gat_in_node_feats": 7,     # your node_features width
+                    "gat_in_edge_feats": 2,     # distance, is_available
+
+                    "gat_num_layers": 3,
+                    "gat_num_heads": 3,
+                    "gat_hidden": 32,
+                    "gat_out": 32,
+
+                    # embedding concatenated to actor input
+                    # default = heads * gat_out = 96
+                    "gat_project_dim": 96,
+
+                    "gat_dropout": 0.0,
+                }
+                }
         )
         .multi_agent(
             policies=policies,

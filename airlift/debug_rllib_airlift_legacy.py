@@ -41,7 +41,8 @@ training_iteration = 45
 data_to_write = {
         "current_iteration": 0,
         "max_iterations": training_iteration,
-        "test_id": 0
+        "test_id": 0,
+        "reset_iter": 0,
     }
 CURRICULUM_JSON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../curriculum.json"))
 with open(CURRICULUM_JSON_PATH, 'w') as f:
@@ -94,13 +95,28 @@ if __name__ == "__main__":
             lr=5e-5,
             train_batch_size=256,              # small batch => quick iteration
             num_sgd_iter=1,                    # a single pass over the batch
-            model={
+            model = {
                 "custom_model": "centralized_critic_model",
                 "custom_model_config": {
-                   "local_obs_dim": 3150,
-                    "central_obs_dim": 3024,
+                    "local_obs_dim": 94,
+                    "central_obs_dim": 1620,
+
+                    "enable_gat": True,
+                    "gat_in_node_feats": 7,     # your node_features width
+                    "gat_in_edge_feats": 2,     # distance, is_available
+
+                    "gat_num_layers": 3,
+                    "gat_num_heads": 3,
+                    "gat_hidden": 32,
+                    "gat_out": 32,
+
+                    # embedding concatenated to actor input
+                    # default = heads * gat_out = 96
+                    "gat_project_dim": 96,
+
+                    "gat_dropout": 0.0,
+                }
                 },
-            },
         )
         .api_stack(enable_rl_module_and_learner=False, enable_env_runner_and_connector_v2=False)
         .callbacks(AlgorithmTrainingCallback)
