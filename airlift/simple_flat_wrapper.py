@@ -137,11 +137,11 @@ class AirliftSimpleFlattenWrapper:
         wg = getattr(self.env, "world_generator", None)
 
         # Fixed, numeric limits (store as attributes — not callables)
-        self.max_cargo_per_plane = int(15)
-        self.max_cargo_per_airport = int(20)
-        self.max_routes_per_airport = int(5)
-        self.max_agents = int(12)
-        self.max_cargo_per_episode = int(36)
+        self.max_cargo_per_plane = int(7)
+        self.max_cargo_per_airport = int(10)
+        self.max_routes_per_airport = int(3)
+        self.max_agents = int(6)
+        self.max_cargo_per_episode = int(15)
         self.max_airports = int(6)
 
         # For action list padding (used by debug scaffolding / future action adapters)
@@ -397,9 +397,10 @@ class AirliftSimpleFlattenWrapper:
             "cargo_onboard":            Box(-np.inf, np.inf, shape=(self.max_cargo_per_plane,), dtype=np.float32),
             "cargo_onboard_urgency":    Box(-np.inf, np.inf, shape=(self.max_cargo_per_plane,), dtype=np.float32),
             "load_frac":                Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
+            "plane_type":               Box(-np.inf, np.inf, shape=(1,), dtype=np.float32),
 
             # --- centralized critic input (shared vector you attach to each agent) ---
-            "globalstate":              Box(-np.inf, np.inf, shape=((3 + self.max_routes_per_airport + 2*self.max_cargo_per_plane + 2*self.max_cargo_per_airport + self.max_cargo_per_plane)*self.max_agents,), dtype=np.float32),
+            "globalstate":              Box(-np.inf, np.inf, shape=((4 + self.max_routes_per_airport + 2*self.max_cargo_per_plane + 2*self.max_cargo_per_airport + self.max_cargo_per_plane)*self.max_agents,), dtype=np.float32),
 
             # --- NEW: previous actions for all planes ---
             # Values will be in {-1, 0, 1}: -1 for padding / "no action yet",
@@ -470,6 +471,7 @@ class AirliftSimpleFlattenWrapper:
             state    = aobs.get("state", 0)
             cw = float(aobs.get("current_weight", 0.0))
             mw = float(aobs.get("max_weight", 1.0))
+            plane_type = aobs.get("plane_type", 0)
 
             # vectors (DON’T overwrite before copying)
             v_state = np.array([float(state)], dtype=np.float32)
@@ -517,6 +519,8 @@ class AirliftSimpleFlattenWrapper:
             v_at_here_urgency = pad_to(at_here_urgency, self.max_cargo_per_airport, fill=0.0)
             v_onboard_urgency = pad_to(onboard_urgency, self.max_cargo_per_plane, fill=0.0)
 
+            v_plane_type = np.array([float(plane_type)], dtype=np.float32)
+
             flattened_obs[aid] = {
                 "state":                   v_state,
                 "current_airport":         v_current_airport,
@@ -526,8 +530,8 @@ class AirliftSimpleFlattenWrapper:
                 "cargo_at_current_airport_urgency": v_at_here_urgency,
                 "cargo_onboard":           v_onboard,
                 "cargo_onboard_urgency":   v_onboard_urgency,
-                # "is_moving":               v_is_moving,
                 "load_frac":               v_load_frac,
+                "plane_type":              v_plane_type,
             }
 
          # Build shared globalstate by concatenating each agent’s compact vector (use flattened_obs, not outer vars)
@@ -557,6 +561,7 @@ class AirliftSimpleFlattenWrapper:
             "cargo_onboard": np.full((self.max_cargo_per_plane,), -1.0, dtype=np.float32),
             "cargo_onboard_urgency": np.full((self.max_cargo_per_plane,), -1.0, dtype=np.float32),
             "load_frac": np.full((1,), -1.0, dtype=np.float32),
+            "plane_type": np.full((1,), -1.0, dtype=np.float32),
         }
 
         for aid in ordered_agents:
@@ -572,6 +577,7 @@ class AirliftSimpleFlattenWrapper:
                 fa["cargo_onboard"],
                 fa["cargo_onboard_urgency"],
                 fa["load_frac"],
+                fa["plane_type"],
             ])
 
         globalstate = np.concatenate(parts, dtype=np.float32)

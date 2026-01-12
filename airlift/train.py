@@ -182,8 +182,8 @@ if __name__ == "__main__":
             model={
             "custom_model": "centralized_critic_model",
             "custom_model_config": {
-                "local_obs_dim": 93, #126
-                "central_obs_dim": 1608,  # Adjust based on actual global
+                "local_obs_dim": 48, #126
+                "central_obs_dim": 414,  # Adjust based on actual global
             }
             }
         )

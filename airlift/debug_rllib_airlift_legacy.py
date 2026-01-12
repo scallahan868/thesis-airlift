@@ -41,7 +41,8 @@ training_iteration = 45
 data_to_write = {
         "current_iteration": 0,
         "max_iterations": training_iteration,
-        "test_id": 0
+        "test_id": 0,
+        "reset_iter": 0,
     }
 CURRICULUM_JSON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../curriculum.json"))
 with open(CURRICULUM_JSON_PATH, 'w') as f:
@@ -97,8 +98,8 @@ if __name__ == "__main__":
             model={
                 "custom_model": "centralized_critic_model",
                 "custom_model_config": {
-                   "local_obs_dim": 3150,
-                    "central_obs_dim": 3024,
+                   "local_obs_dim": 48,
+                    "central_obs_dim": 414,
                 },
             },
         )
