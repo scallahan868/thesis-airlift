@@ -111,7 +111,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
 
         # Output node embedding dim from the final layer.
         # For PyG GATConv with concat=True: heads*out_channels.
-        self.gat_concat = True
+        self.gat_concat = False
         self.gat_final_node_dim = self.gat_num_heads * self.gat_out
 
         # Optional projection for the node embedding before concatenation.
@@ -171,7 +171,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
                     in_channels=self.gat_in_node_feats,
                     out_channels=self.gat_hidden,
                     heads=self.gat_num_heads,
-                    concat=True,
+                    concat=False,
                     dropout=float(cfg.get("gat_dropout", 0.0)),
                     add_self_loops=True,
                     edge_dim=self.gat_in_edge_feats if self.gat_in_edge_feats > 0 else None,
@@ -186,7 +186,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
                         in_channels=self.gat_num_heads * self.gat_hidden,
                         out_channels=self.gat_hidden,
                         heads=self.gat_num_heads,
-                        concat=True,
+                        concat=False,
                         dropout=float(cfg.get("gat_dropout", 0.0)),
                         add_self_loops=True,
                         edge_dim=self.gat_in_edge_feats if self.gat_in_edge_feats > 0 else None,
@@ -200,7 +200,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
                     in_channels=self.gat_num_heads * self.gat_hidden,
                     out_channels=self.gat_out,
                     heads=self.gat_num_heads,
-                    concat=True,  # keep [N, heads*out]
+                    concat=False,  # keep [N, heads*out]
                     dropout=float(cfg.get("gat_dropout", 0.0)),
                     add_self_loops=True,
                     edge_dim=self.gat_in_edge_feats if self.gat_in_edge_feats > 0 else None,
@@ -345,19 +345,102 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
 
     # -------------------- GAT helpers --------------------
 
+    # def _compute_current_node_embedding(self, obs: Dict[str, Any]) -> torch.Tensor:
+    #     """
+    #     Computes a per-sample node embedding for the agent's current airport via PyG GATConv.
+
+    #     Expected obs keys (per-sample or batched):
+    #       - node_features: [B, N, F] or [N, F]
+    #       - edge_index:   [B, 2, E] or [2, E] (padded with -1)
+    #       - edge_features:[B, E, D] or [E, D] (optional)
+    #       - current_airport_idx: [B] or [B,1] or scalar (index into 0..N-1)
+
+    #     Returns:
+    #       Tensor [B, gat_project_dim]
+    #     """
+    #     node_features = obs["node_features"]
+    #     edge_index = obs["edge_index"]
+    #     edge_features = obs.get("edge_features", None)
+
+    #     x = node_features if isinstance(node_features, torch.Tensor) else torch.as_tensor(node_features, dtype=torch.float32)
+    #     ei = edge_index if isinstance(edge_index, torch.Tensor) else torch.as_tensor(edge_index, dtype=torch.long)
+    #     ea = None
+    #     if edge_features is not None:
+    #         ea = edge_features if isinstance(edge_features, torch.Tensor) else torch.as_tensor(edge_features, dtype=torch.float32)
+
+    #     # Ensure batch dimension
+    #     if x.ndim == 2:  # [N, F]
+    #         x = x.unsqueeze(0)
+    #     if ei.ndim == 2:  # [2, E]
+    #         ei = ei.unsqueeze(0)
+    #     if ea is not None and ea.ndim == 2:  # [E, D]
+    #         ea = ea.unsqueeze(0)
+
+    #     B, N, _ = x.shape
+
+    #     # Current node indices
+    #     cur_idx = obs.get("current_airport_idx", obs.get("current_airport", None))
+    #     if cur_idx is None:
+    #         # fallback to 0 for all
+    #         cur = torch.zeros((B,), dtype=torch.long, device=x.device)
+    #     else:
+    #         cur = cur_idx if isinstance(cur_idx, torch.Tensor) else torch.as_tensor(cur_idx, dtype=torch.long)
+    #         if cur.ndim > 1:
+    #             cur = cur.reshape(-1)
+    #         if cur.numel() == 1 and B > 1:
+    #             cur = cur.repeat(B)
+    #         cur = cur.to(x.device)
+
+    #     outs = []
+    #     for b in range(B):
+    #         xb = x[b]  # [N, F]
+    #         eib = ei[b]  # [2, E]
+    #         if eib.dtype != torch.long:
+    #             eib = eib.long()
+
+    #         # Filter padded edges (-1)
+    #         if eib.numel() == 0:
+    #             valid_mask = torch.zeros((0,), dtype=torch.bool, device=xb.device)
+    #         else:
+    #             valid_mask = (eib[0] >= 0) & (eib[1] >= 0)
+    #         eib = eib[:, valid_mask]
+
+    #         eab = None
+    #         if ea is not None:
+    #             eab = ea[b]
+    #             eab = eab[valid_mask] if valid_mask.numel() == eab.shape[0] else eab[: eib.shape[1]]
+
+    #         # If no edges survive, create a single self-loop to keep GATConv happy.
+    #         if eib.numel() == 0:
+    #             eib = torch.zeros((2, 1), dtype=torch.long, device=xb.device)
+    #             if self.gat_in_edge_feats > 0:
+    #                 eab = torch.zeros((1, self.gat_in_edge_feats), dtype=torch.float32, device=xb.device)
+
+    #         h = xb
+    #         for li, conv in enumerate(self.gat_layers):
+    #             if self.gat_in_edge_feats > 0:
+    #                 h = conv(h, eib, edge_attr=eab)
+    #             else:
+    #                 h = conv(h, eib)
+    #             # Apply activation to all but last layer
+    #             if li < len(self.gat_layers) - 1:
+    #                 h = self.gat_acts[li](h)
+
+    #         # h: [N, heads*out]
+    #         idx = int(torch.clamp(cur[b], 0, N - 1).item())
+    #         node_h = h[idx]  # [heads*out]
+    #         node_h = self.gat_proj(node_h)  # [proj]
+    #         outs.append(node_h.unsqueeze(0))
+
+    #     return torch.cat(outs, dim=0)  # [B, proj]
     def _compute_current_node_embedding(self, obs: Dict[str, Any]) -> torch.Tensor:
         """
-        Computes a per-sample node embedding for the agent's current airport via PyG GATConv.
-
-        Expected obs keys (per-sample or batched):
-          - node_features: [B, N, F] or [N, F]
-          - edge_index:   [B, 2, E] or [2, E] (padded with -1)
-          - edge_features:[B, E, D] or [E, D] (optional)
-          - current_airport_idx: [B] or [B,1] or scalar (index into 0..N-1)
-
-        Returns:
-          Tensor [B, gat_project_dim]
+        Faster version: batches graphs using torch_geometric.data.Batch and
+        runs the GAT stack once (instead of B times in a Python loop).
+        Returns: [B, gat_project_dim]
         """
+        from torch_geometric.data import Data, Batch  # local import to avoid hard dependency at module import time
+
         node_features = obs["node_features"]
         edge_index = obs["edge_index"]
         edge_features = obs.get("edge_features", None)
@@ -369,7 +452,7 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
             ea = edge_features if isinstance(edge_features, torch.Tensor) else torch.as_tensor(edge_features, dtype=torch.float32)
 
         # Ensure batch dimension
-        if x.ndim == 2:  # [N, F]
+        if x.ndim == 2:   # [N, F]
             x = x.unsqueeze(0)
         if ei.ndim == 2:  # [2, E]
             ei = ei.unsqueeze(0)
@@ -378,10 +461,9 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
 
         B, N, _ = x.shape
 
-        # Current node indices
+        # Current node indices (shape [B])
         cur_idx = obs.get("current_airport_idx", obs.get("current_airport", None))
         if cur_idx is None:
-            # fallback to 0 for all
             cur = torch.zeros((B,), dtype=torch.long, device=x.device)
         else:
             cur = cur_idx if isinstance(cur_idx, torch.Tensor) else torch.as_tensor(cur_idx, dtype=torch.long)
@@ -391,48 +473,58 @@ class CentralizedCriticModel(TorchModelV2, nn.Module):
                 cur = cur.repeat(B)
             cur = cur.to(x.device)
 
-        outs = []
+        # Build Data objects per sample (still a loop, but only for packing; GNN runs once)
+        data_list = []
         for b in range(B):
-            xb = x[b]  # [N, F]
-            eib = ei[b]  # [2, E]
-            if eib.dtype != torch.long:
-                eib = eib.long()
+            xb = x[b]            # [N, F]
+            eib = ei[b].long()   # [2, E]
 
-            # Filter padded edges (-1)
+            # Filter padded edges (-1) ONCE while packing
             if eib.numel() == 0:
                 valid_mask = torch.zeros((0,), dtype=torch.bool, device=xb.device)
             else:
                 valid_mask = (eib[0] >= 0) & (eib[1] >= 0)
+
             eib = eib[:, valid_mask]
 
             eab = None
             if ea is not None:
                 eab = ea[b]
+                # If padding mismatch, fall back to slicing
                 eab = eab[valid_mask] if valid_mask.numel() == eab.shape[0] else eab[: eib.shape[1]]
 
-            # If no edges survive, create a single self-loop to keep GATConv happy.
+            # Keep at least one edge to keep GATConv happy (cheap self-loop)
             if eib.numel() == 0:
                 eib = torch.zeros((2, 1), dtype=torch.long, device=xb.device)
                 if self.gat_in_edge_feats > 0:
                     eab = torch.zeros((1, self.gat_in_edge_feats), dtype=torch.float32, device=xb.device)
 
-            h = xb
-            for li, conv in enumerate(self.gat_layers):
-                if self.gat_in_edge_feats > 0:
-                    h = conv(h, eib, edge_attr=eab)
-                else:
-                    h = conv(h, eib)
-                # Apply activation to all but last layer
-                if li < len(self.gat_layers) - 1:
-                    h = self.gat_acts[li](h)
+            if self.gat_in_edge_feats > 0:
+                data_list.append(Data(x=xb, edge_index=eib, edge_attr=eab))
+            else:
+                data_list.append(Data(x=xb, edge_index=eib))
 
-            # h: [N, heads*out]
-            idx = int(torch.clamp(cur[b], 0, N - 1).item())
-            node_h = h[idx]  # [heads*out]
-            node_h = self.gat_proj(node_h)  # [proj]
-            outs.append(node_h.unsqueeze(0))
+        batch = Batch.from_data_list(data_list)
 
-        return torch.cat(outs, dim=0)  # [B, proj]
+        # One GNN forward for the whole batch
+        h = batch.x
+        for li, conv in enumerate(self.gat_layers):
+            if self.gat_in_edge_feats > 0:
+                h = conv(h, batch.edge_index, edge_attr=batch.edge_attr)
+            else:
+                h = conv(h, batch.edge_index)
+            if li < len(self.gat_layers) - 1:
+                h = self.gat_acts[li](h)
+
+        # Gather each sample’s current node embedding
+        # batch.ptr: [B+1], start index of each graph’s nodes in the packed tensor
+        cur = torch.clamp(cur, 0, N - 1)
+        global_node_idx = batch.ptr[:-1] + cur  # [B]
+
+        node_h = h[global_node_idx]             # [B, gat_final_node_dim]
+        node_h = self.gat_proj(node_h)          # [B, gat_project_dim]
+        return node_h
+
 
     # -------------------- Logging (preserved) --------------------
 

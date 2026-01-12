@@ -176,13 +176,9 @@ if __name__ == "__main__":
         env_to_module_connector=None,
         )
         .training(
-            lr=3e-5,
-            # gamma=0.995,
-            # lambda_=0.95,
-            # clip_param=0.2,
-            # vf_loss_coeff=0.3,
-            # kl_coeff=0.0,
-            # entropy_coeff=0.01,
+            lr=5e-5,
+            grad_clip = 0.5,  # or 1.0
+            num_epochs = 10,  # instead of 30
             model = {
                 "custom_model": "centralized_critic_model",
                 "custom_model_config": {
@@ -193,14 +189,14 @@ if __name__ == "__main__":
                     "gat_in_node_feats": 7,     # your node_features width
                     "gat_in_edge_feats": 2,     # distance, is_available
 
-                    "gat_num_layers": 3,
-                    "gat_num_heads": 3,
-                    "gat_hidden": 32,
-                    "gat_out": 32,
+                    "gat_num_layers": 2,
+                    "gat_num_heads": 1,
+                    "gat_hidden": 16,
+                    "gat_out": 16,
 
                     # embedding concatenated to actor input
                     # default = heads * gat_out = 96
-                    "gat_project_dim": 96,
+                    "gat_project_dim": 16,
 
                     "gat_dropout": 0.0,
                 }
