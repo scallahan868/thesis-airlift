@@ -142,11 +142,11 @@ class AirliftSimpleFlattenWrapper:
         wg = getattr(self.env, "world_generator", None)
 
         # Fixed, numeric limits (store as attributes — not callables)
-        self.max_cargo_per_plane = int(15)
-        self.max_cargo_per_airport = int(20)
-        self.max_routes_per_airport = int(5)
-        self.max_agents = int(12)
-        self.max_cargo_per_episode = int(36)
+        self.max_cargo_per_plane = int(7)
+        self.max_cargo_per_airport = int(10)
+        self.max_routes_per_airport = int(3)
+        self.max_agents = int(6)
+        self.max_cargo_per_episode = int(15)
         self.max_airports = int(6)
         self.max_edges = int(self.max_airports * self.max_routes_per_airport)
 

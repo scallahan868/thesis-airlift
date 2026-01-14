@@ -65,10 +65,14 @@ training_iteration = 10000
 curriculum_map = DifficultyProgressionMap(seed=int(time.time()) % 10000)
 
 from centralized_critic_model import CentralizedCriticModel
+from centralized_critic_model_sage import CentralizedCriticModelGraphSAGE
 from ray.rllib.models import ModelCatalog
 
 ModelCatalog.register_custom_model(
     "centralized_critic_model", CentralizedCriticModel
+)
+ModelCatalog.register_custom_model(
+    "centralized_critic_model_sage", CentralizedCriticModelGraphSAGE
 )
 
 import json
@@ -179,28 +183,46 @@ if __name__ == "__main__":
             lr=5e-5,
             grad_clip = 0.5,  # or 1.0
             num_epochs = 10,  # instead of 30
-            model = {
-                "custom_model": "centralized_critic_model",
+            # model = {
+            #     "custom_model": "centralized_critic_model",
+            #     "custom_model_config": {
+            #         "local_obs_dim": 94,
+            #         "central_obs_dim": 1620,
+
+            #         "enable_gat": True,
+            #         "gat_in_node_feats": 7,     # your node_features width
+            #         "gat_in_edge_feats": 2,     # distance, is_available
+
+            #         "gat_num_layers": 2,
+            #         "gat_num_heads": 1,
+            #         "gat_hidden": 16,
+            #         "gat_out": 16,
+
+            #         # embedding concatenated to actor input
+            #         # default = heads * gat_out = 96
+            #         "gat_project_dim": 16,
+
+            #         "gat_dropout": 0.0,
+            #     }
+            #     }
+            model={
+                "custom_model": "centralized_critic_model_sage",
                 "custom_model_config": {
-                    "local_obs_dim": 94,
-                    "central_obs_dim": 1620,
+                    "local_obs_dim": 48,
+                    "central_obs_dim": 414,
 
-                    "enable_gat": True,
-                    "gat_in_node_feats": 7,     # your node_features width
-                    "gat_in_edge_feats": 2,     # distance, is_available
-
-                    "gat_num_layers": 2,
-                    "gat_num_heads": 1,
-                    "gat_hidden": 16,
-                    "gat_out": 16,
+                    "enable_sage": True,
+                    "sage_in_node_feats": 7,   # node_features width from wrapper :contentReference[oaicite:3]{index=3}
+                    "sage_num_layers": 2,
+                    "sage_hidden": 16,
+                    "sage_out": 16,
 
                     # embedding concatenated to actor input
-                    # default = heads * gat_out = 96
-                    "gat_project_dim": 16,
+                    "sage_project_dim": 16,
 
-                    "gat_dropout": 0.0,
-                }
-                }
+                    "sage_dropout": 0.0,
+                },
+            }
         )
         .multi_agent(
             policies=policies,
