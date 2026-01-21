@@ -1,0 +1,222 @@
+2.47.1
+2.47.1
+:job_id:01000000
+:actor_name:RolloutWorker
+Obs space after flatten wrapper: <bound method AirliftSimpleFlattenWrapper.observation_space of <simple_flat_wrapper.AirliftSimpleFlattenWrapper object at 0x71aec1d4b5d0>>
+🧠 CentralizedCriticModel (Legacy) setting up...
+   📊 Observation space: Box(-1.0, 1.0, (907,), float32)
+   🎯 Action space: Dict('cargo_to_load': MultiDiscrete([21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21]), 'cargo_to_unload': MultiDiscrete([21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21]), 'destination': Discrete(9), 'priority': Discrete(10))
+   🎮 Num outputs (actions): 859
+   📏 Local obs dim: 907
+   🌍 Central obs dim: 851
+   ✅ Actor network: 907 → FC → 859
+   ✅ Critic network: 851 → 256 → 256 → 1
+🧠 CRITIC DEBUG (Call #1):
+   📊 Full obs: Dict(obs:10, state:tensor([[0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.]]))
+   🌍 Using central obs: torch.Size([32, 851])
+   ✅ Critic sees CENTRALIZED observations
+
+🔍 CENTRALIZED CRITIC VERIFICATION SUMMARY:
+   🎭 Actor calls: 1 (using local obs: 907D)
+   🧠 Critic calls: 1 (using central obs: 851D)
+   ✅ VERIFIED: Actor and Critic use DIFFERENT observation spaces!
+   📏 Local obs (actor): 907 dimensions
+   🌍 Central obs (critic): 851 dimensions
+🧠 CRITIC DEBUG (Call #2):
+   📊 Full obs: Dict(obs:10, state:tensor([[0.]]))
+   🌍 Using central obs: torch.Size([1, 851])
+   ✅ Critic sees CENTRALIZED observations
+🧠 CRITIC DEBUG (Call #3):
+   📊 Full obs: Dict(obs:10, state:tensor([[0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.]]))
+   🌍 Using central obs: torch.Size([32, 851])
+   ✅ Critic sees CENTRALIZED observations
+Obs space after flatten wrapper: <bound method AirliftSimpleFlattenWrapper.observation_space of <simple_flat_wrapper.AirliftSimpleFlattenWrapper object at 0x71a9d2601850>>
+🧠 CentralizedCriticModel (Legacy) setting up...
+   📊 Observation space: Box(-1.0, 1.0, (907,), float32)
+   🎯 Action space: Dict('cargo_to_load': MultiDiscrete([21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21]), 'cargo_to_unload': MultiDiscrete([21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21 21]), 'destination': Discrete(9), 'priority': Discrete(10))
+   🎮 Num outputs (actions): 859
+   📏 Local obs dim: 907
+   🌍 Central obs dim: 851
+   ✅ Actor network: 907 → FC → 859
+   ✅ Critic network: 851 → 256 → 256 → 1
+🧠 CRITIC DEBUG (Call #4):
+   📊 Full obs: Dict(obs:10, state:tensor([[0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.]]))
+   🌍 Using central obs: torch.Size([32, 851])
+   ✅ Critic sees CENTRALIZED observations
+🧠 CRITIC DEBUG (Call #5):
+   📊 Full obs: Dict(obs:10, state:tensor([[0.]]))
+   🌍 Using central obs: torch.Size([1, 851])
+   ✅ Critic sees CENTRALIZED observations
+🧠 CRITIC DEBUG (Call #6):
+   📊 Full obs: Dict(obs:10, state:tensor([[0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.]]))
+   🌍 Using central obs: torch.Size([32, 851])
+   ✅ Critic sees CENTRALIZED observations
+
+--- Training iteration 1 ---
+2.47.1
+🧠 CRITIC DEBUG (Call #7):
+   📊 Full obs: Dict(obs:10, state:tensor([[3.],
+        [3.],
+        [3.],
+        [3.]]))
+   🌍 Using central obs: torch.Size([4, 851])
+   ✅ Critic sees CENTRALIZED observations
+🧠 CRITIC DEBUG (Call #8):
+   📊 Full obs: Dict(obs:10, state:tensor([[1.],
+        [1.],
+        [1.],
+        [1.]]))
+   🌍 Using central obs: torch.Size([4, 851])
+   ✅ Critic sees CENTRALIZED observations
+🧠 CRITIC DEBUG (Call #9):
+   📊 Full obs: Dict(obs:10, state:tensor([[3.],
+        [3.],
+        [3.],
+        [3.]]))
+   🌍 Using central obs: torch.Size([4, 851])
+   ✅ Critic sees CENTRALIZED observations
+🧠 CRITIC DEBUG (Call #10):
+   📊 Full obs: Dict(obs:10, state:tensor([[1.],
+        [1.],
+        [1.],
+        [1.]]))
+   🌍 Using central obs: torch.Size([4, 851])
+   ✅ Critic sees CENTRALIZED observations
+🧠 CRITIC DEBUG (Call #11):
+   📊 Full obs: Dict(obs:10, state:tensor([[3.],
+        [3.],
+        [3.],
+        [3.]]))
+   🌍 Using central obs: torch.Size([4, 851])
+   ✅ Critic sees CENTRALIZED observations
+🧠 CRITIC DEBUG (Call #12):
+   📊 Full obs: Dict(obs:10, state:tensor([[1.],
+        [1.],
+        [1.],
+        [1.]]))
+   🌍 Using central obs: torch.Size([4, 851])
+   ✅ Critic sees CENTRALIZED observations
